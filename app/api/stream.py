@@ -133,6 +133,8 @@ def _recommendation_payload(state: AgentState) -> dict:
         "trace_steps": state.trace_steps,
         "harness_report": state.harness_report,
         "sufficiency_report": state.sufficiency_report,
+        "scene_plan": state.scene_plan or None,
+        "scene_task_queries": state.scene_task_queries or [],
         "constraints": _snapshot_update(state)["constraints"],
         "needs_clarification": state.needs_clarification,
         "clarification_question": state.clarification_question,
@@ -252,6 +254,8 @@ async def recommend_guide(req: GuideRequest):
         "decision_results": result.decision_results,
         "evidence_list": result.evidence_list,
         "trace_steps": result.trace_steps,
+        "scene_plan": result.scene_plan or None,
+        "scene_task_queries": result.scene_task_queries or [],
     }
 
 

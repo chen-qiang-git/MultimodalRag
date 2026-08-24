@@ -27,6 +27,10 @@ data class RecommendResponse(
     val retrievalPlan: Map<String, Any?>? = null,
     @SerializedName("sufficiency_report")
     val sufficiencyReport: Map<String, Any?>? = null,
+    @SerializedName("scene_plan")
+    val scenePlan: Map<String, Any?>? = null,
+    @SerializedName("scene_task_queries")
+    val sceneTaskQueries: List<Map<String, Any?>> = emptyList(),
     @SerializedName("constraints")
     val constraints: Map<String, Any?>? = null,
     @SerializedName("used_memories")

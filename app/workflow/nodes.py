@@ -9,6 +9,7 @@ from app.decision.rules import BRAND_ALIASES, PARENT_SUB_MAP
 from app.decision.scoring import DecisionScoring
 from app.model_gateway.gateway import get_model_gateway
 from app.prompts.response_prompt import CHITCHAT_PROMPT, build_response_prompt
+from app.prompts.scene_response_prompt import build_scene_response_prompt, scene_template_answer
 from app.repositories import get_product_repo
 from app.rerank.blender import blend_rank_score
 from app.retrieval.llm_evaluator import LlmEvaluator
@@ -51,6 +52,22 @@ async def retrieval_node(state: AgentState) -> AgentState:
     slots = state.slots
     budget = slots.budget or BudgetSchema()
     query = state.rewritten_query or state.user_input
+
+    # 专用场景计划：每个任务槽位独立召回一个候选，先保证跨品类覆盖再进入精排。
+    if state.intent == "scene_search" and state.scene_task_queries:
+        results = await _retrieve_scene_tasks(state)
+        state.ranked_items = results
+        state.evidence_list = _build_evidence(results)
+        state.trace_steps.append({
+            "step_id": f"T{len(state.trace_steps) + 1:03d}",
+            "agent_name": "Scene Task Retrieval Node",
+            "action": "per_task_recall",
+            "input_summary": state.slots.scene or query[:60],
+            "output_summary": f"tasks={len(state.scene_task_queries)}, candidates={len(results)}",
+            "latency_ms": 0,
+            "status": "success" if results else "empty",
+        })
+        return state
 
     # P5: Multi-Query 多路变体召回（sub/brand/spec/must_tags 组合），默认开启
     if ENABLE_MULTI_QUERY:
@@ -139,6 +156,46 @@ async def retrieval_node(state: AgentState) -> AgentState:
         "status": "success" if results else "empty",
     })
     return state
+
+
+async def _retrieve_scene_tasks(state: AgentState) -> list[dict]:
+    """按场景任务分别召回，选择每项的最佳真实商品，并按商品 ID 去重。"""
+    slots = state.slots
+    budget = slots.budget or BudgetSchema()
+    selected: list[dict] = []
+    seen_ids: set[str] = set()
+    exclusions = slots.exclusions or []
+
+    for task in state.scene_task_queries[:3]:
+        allowed_sub_categories = set(task.get("sub_categories") or [])
+        task_hits: list[dict] = []
+        for sub_category in allowed_sub_categories:
+            task_hits.extend(await _text.search_chunked(
+                task.get("query") or state.user_input,
+                top_k=DEFAULT_TOP_K,
+                sub_category=sub_category,
+                price_max=budget.max,
+                price_min=budget.min,
+                candidate_ids=state.candidate_ids or None,
+            ))
+        task_hits.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+        for item in task_hits:
+            product_id = item.get("product_id")
+            if not product_id or product_id in seen_ids:
+                continue
+            if any(
+                term.lower() in (str(item.get("title") or "") + str(item.get("brand") or "")).lower()
+                for term in exclusions
+            ):
+                continue
+            item["scene_task"] = {
+                "key": task.get("key") or "",
+                "label": task.get("label") or "实用装备",
+            }
+            selected.append(item)
+            seen_ids.add(product_id)
+            break
+    return selected
 
 
 def _build_query_variants(state: AgentState, base: str) -> list[str]:
@@ -347,7 +404,7 @@ async def reranker_node(state: AgentState) -> AgentState:
 
     state.ranked_items = sorted(items, key=lambda p: p.get("rank_score", 0), reverse=True)
     # scene_search 发散增强：按子类轮转去重，Top-N 跨类目（不再清一色防晒）
-    if state.intent == "scene_search":
+    if state.intent == "scene_search" and not state.scene_task_queries:
         state.ranked_items = _diversify_by_subcategory(state.ranked_items)
     state.trace_steps.append({
         "step_id": f"T{len(state.trace_steps) + 1:03d}",
@@ -529,15 +586,20 @@ async def response_node(state: AgentState) -> AgentState:
         return state
 
     top = state.ranked_items[:3]
-    prompt = build_response_prompt(top, state.slots.spec_keywords)
+    is_scene_plan = state.intent == "scene_search" and bool(state.scene_plan)
+    prompt = (
+        build_scene_response_prompt(state.scene_plan, top)
+        if is_scene_plan
+        else build_response_prompt(top, state.slots.spec_keywords)
+    )
     answer = ""
     try:
         answer = await asyncio.wait_for(_gateway.chat("chat_generation", prompt), timeout=6.0)
         answer = (answer or "").strip()
-        if len(answer) < 10 or not _cites_products(answer, top):
-            answer = _template_answer(top)
+        if len(answer) < 10 or not _response_cites_candidates(answer, top, is_scene_plan):
+            answer = scene_template_answer(state.scene_plan, top) if is_scene_plan else _template_answer(top)
     except Exception:
-        answer = _template_answer(top)
+        answer = scene_template_answer(state.scene_plan, top) if is_scene_plan else _template_answer(top)
 
     state.final_response = answer
     # 库存不足提示：结果 <3 时如实说明，并给同类子类下的其他品牌名（不给商品信息）
@@ -585,7 +647,12 @@ async def stream_response(state: AgentState):
             yield direct_answer
             return
         top = state.ranked_items[:3]
-        prompt = build_response_prompt(top, state.slots.spec_keywords)
+        is_scene_plan = state.intent == "scene_search" and bool(state.scene_plan)
+        prompt = (
+            build_scene_response_prompt(state.scene_plan, top)
+            if is_scene_plan
+            else build_response_prompt(top, state.slots.spec_keywords)
+        )
 
     fragments: list[str] = []
     try:
@@ -594,15 +661,18 @@ async def stream_response(state: AgentState):
             yield token
     except Exception:
         state.final_response = (
-            _template_answer(top)
+            scene_template_answer(state.scene_plan, top)
+            if top and state.intent == "scene_search" and state.scene_plan
+            else _template_answer(top)
             if top
             else _chitchat_fallback(state.user_input)
         )
         return
 
     answer = "".join(fragments).strip()
-    if top and (len(answer) < 10 or not _cites_products(answer, top)):
-        answer = _template_answer(top)
+    is_scene_plan = state.intent == "scene_search" and bool(state.scene_plan)
+    if top and (len(answer) < 10 or not _response_cites_candidates(answer, top, is_scene_plan)):
+        answer = scene_template_answer(state.scene_plan, top) if is_scene_plan else _template_answer(top)
     elif not answer:
         answer = _chitchat_fallback(state.user_input) if not top else _template_answer(top)
     if 0 < len(top) < 3:
@@ -667,6 +737,17 @@ def _cites_products(answer: str, top: list[dict]) -> bool:
             if not any(token in answer for token in price_tokens):
                 return False
     return True
+
+
+def _response_cites_candidates(answer: str, top: list[dict], is_scene_plan: bool) -> bool:
+    if not _cites_products(answer, top):
+        return False
+    if not is_scene_plan:
+        return True
+    return all(
+        str((item.get("scene_task") or {}).get("label") or "") in answer
+        for item in top
+    )
 
 
 def _low_stock_hint(top: list[dict], current_brand: str | None) -> str:

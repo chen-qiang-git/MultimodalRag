@@ -64,6 +64,11 @@ _DIRECT_REFERENCE_PATTERN = re.compile(
     r"(?:说下|说一下|介绍下|介绍一下|讲讲|详情|细节|卖点|特点|怎么样|"
     r"值不值得|好不好|适合谁|这款|这一款|这台|这个|那个|它)"
 )
+_SCENE_PRODUCT_FOCUS_PATTERN = re.compile(
+    r"徒步鞋|登山鞋|跑步鞋|篮球鞋|鞋子|背包|防晒|饮料|短袖|T恤|"
+    r"充电宝|移动电源|耳机|手机|电脑|相机|衣服|裤子|帽子",
+    re.IGNORECASE,
+)
 
 
 # ================================================================
@@ -191,8 +196,9 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
     slots = normalize_slots(slots)
 
     # 宽泛场景需求（如“去爬山/去三亚旅游”）由规则稳定路由到跨品类推荐。
-    # 已指定具体品类或子类时仍保留普通检索，避免把“爬山背包”发散成整套装备。
-    if slots.scene and not slots.category and not slots.sub_category:
+    # detect_category 会把“爬山/旅游”误当作服饰或运动，因此不能拿 category
+    # 作为判断依据；仅当用户没有明确商品焦点、也没有指定品牌时才发散。
+    if slots.scene and _is_broad_scene_request(user_query) and not slots.brand:
         slots.intent = "scene_search"
 
     # 全新完整需求 → 强制 search + 回填规则品类
@@ -528,6 +534,11 @@ def _is_direct_reference_query(query: str) -> bool:
     return "对比" not in query and bool(_DIRECT_REFERENCE_PATTERN.search(query))
 
 
+def _is_broad_scene_request(query: str) -> bool:
+    """用户只说使用场景、未点名具体商品时，才进入跨品类场景导购。"""
+    return not bool(_SCENE_PRODUCT_FOCUS_PATTERN.search(query or ""))
+
+
 def _resolve_clarification(slots: SlotSchema) -> SlotSchema:
     """追问触发规则（对齐 v2.0 router）：
 
@@ -544,10 +555,9 @@ def _resolve_clarification(slots: SlotSchema) -> SlotSchema:
 
 
 def _apply_scene_search(slots: SlotSchema) -> SlotSchema:
-    """scene_search 跨品类发散：清品类/预算，注入轻量场景关键词。"""
+    """scene_search 跨品类发散：清品类约束，注入轻量场景关键词。"""
     slots.category = None
     slots.sub_category = None
-    slots.budget = BudgetSchema()
     scene = slots.scene or ""
     scene_kws = _SCENE_SPEC_KEYWORDS.get(scene, [])
     if not scene_kws:
