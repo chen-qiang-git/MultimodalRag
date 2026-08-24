@@ -63,6 +63,8 @@ class QwenChat:
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
+                # DashScope 通过此请求头启用 HTTP Server-Sent Events。
+                "X-DashScope-SSE": "enable",
             },
             json={
                 "model": self._model,
@@ -75,6 +77,7 @@ class QwenChat:
             },
         ) as resp:
             resp.raise_for_status()
+            received_text = False
             async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):
                     continue
@@ -88,6 +91,9 @@ class QwenChat:
                     if chunk.get("usage"):
                         self.last_usage = chunk["usage"]
                     if text:
+                        received_text = True
                         yield text
                 except (json.JSONDecodeError, KeyError):
                     pass
+            if not received_text:
+                raise RuntimeError("DashScope 流式响应未包含文本内容")

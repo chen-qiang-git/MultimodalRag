@@ -593,14 +593,18 @@ async def stream_response(state: AgentState):
             fragments.append(token)
             yield token
     except Exception:
-        state.final_response = _template_answer(top) if top else "抱歉，暂时无法回答你的问题。"
+        state.final_response = (
+            _template_answer(top)
+            if top
+            else _chitchat_fallback(state.user_input)
+        )
         return
 
     answer = "".join(fragments).strip()
     if top and (len(answer) < 10 or not _cites_products(answer, top)):
         answer = _template_answer(top)
     elif not answer:
-        answer = "抱歉，暂时无法回答你的问题。"
+        answer = _chitchat_fallback(state.user_input) if not top else _template_answer(top)
     if 0 < len(top) < 3:
         hint = _low_stock_hint(top, state.slots.brand)
         if hint and "商品库" not in answer:
