@@ -11,7 +11,7 @@ from app.decision.rules import BRAND_ALIASES, detect_category, detect_sub_catego
 from app.governor.budget_governor import detect_budget_range
 
 # ---- 指代模式 ----
-_ORDINAL_PATTERN = re.compile(r"第\s*([一二三四五六七八九十12345１２３４５])\s*[个款种]")
+_ORDINAL_PATTERN = re.compile(r"第\s*([一二三四五六七八九十12345１２３４５])\s*[个款种件]")
 _CN_NUM = {
     "一": 0, "二": 1, "三": 2, "四": 3, "五": 4,
     "六": 5, "七": 6, "八": 7, "九": 8, "十": 9,
@@ -25,7 +25,15 @@ _LAST_REF_PATTERN = re.compile(
     r"前面.{0,3}[个款种]|"
     r"^.{0,2}(它|这个|那个)"
 )
-_CART_PATTERN = re.compile(r"(加入购物车|加购|加进购物车|买了|下单|结算)")
+# 购物操作是规则强信号：覆盖 LLM 的意图判断，避免“删除第一件”等短句误走推荐链路。
+_CART_PATTERN = re.compile(
+    r"(加入购物车|加购|加进购物车|放购物车|买了|"
+    r"删除|删掉|删|移除|去掉|不要了|"
+    r"清空|全部删|全部移|都删|"
+    r"数量|加一件|减一件|再加|改成|"
+    r"下单|结算|付款|结账|支付|"
+    r"查看购物车|看看购物车|购物车|我的车)"
+)
 
 # P0-C: 排除语义（不要X / 除了X）— 优先于指代消解
 _EXCLUSION_PATTERN = re.compile(
