@@ -59,6 +59,12 @@ _SCENE_SPEC_KEYWORDS = {
     "skincare": ["面霜", "精华", "化妆水", "面膜", "防晒"],
 }
 
+_DIRECT_REFERENCE_PATTERN = re.compile(
+    r"第\s*[一二三四五六七八九十12345１２３４５]\s*[个款种件]|"
+    r"(?:说下|说一下|介绍下|介绍一下|讲讲|详情|细节|卖点|特点|怎么样|"
+    r"值不值得|好不好|适合谁|这款|这一款|这台|这个|那个|它)"
+)
+
 
 # ================================================================
 # 阶段3：槽位编译（P1 一次 LLM + 规则兜底）
@@ -426,6 +432,7 @@ def _rule_fallback_slots(query: str, pre: dict, snapshot: dict) -> SlotSchema:
         ),
         scene=detect_scenario(query),
         exclusions=exclusions,
+        rule_resolved_product_id=pre.get("resolved_product_id"),
         rule_budget_max=pre.get("budget_max") or budget.get("max"),
         rule_budget_min=pre.get("budget_min") or budget.get("min"),
         rule_budget_kind=pre.get("budget_kind") or budget.get("kind"),
@@ -499,12 +506,21 @@ def _route_intent(slots: SlotSchema, pre: dict) -> SlotSchema:
         slots.intent = "search"
     if slots.intent == "narrow" and not slots.resolved_product_id:
         slots.intent = "search"
-    # resolved_product_id 只把 search/narrow 升级为 narrow，保留 direct_answer
+    # 已由规则锁定商品且用户在追问其详情时，直达证据问答；
+    # 其余“第 N 件”筛选意图仍走 narrow，避免把比较/重新推荐误当单品问答。
     if slots.resolved_product_id and slots.intent in ("search", "narrow"):
-        slots.intent = "narrow"
+        if _is_direct_reference_query(slots.rewritten_query):
+            slots.intent = "direct_answer"
+        else:
+            slots.intent = "narrow"
     if pre.get("shop_action"):
         slots.intent = "shop_action"
     return slots
+
+
+def _is_direct_reference_query(query: str) -> bool:
+    """判断已解析商品 ID 的用户输入是否在追问单品详情。"""
+    return "对比" not in query and bool(_DIRECT_REFERENCE_PATTERN.search(query))
 
 
 def _resolve_clarification(slots: SlotSchema) -> SlotSchema:
