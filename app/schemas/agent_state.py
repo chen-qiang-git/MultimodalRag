@@ -108,6 +108,7 @@ class AgentState(BaseModel):
     evidence_list: List[Dict[str, Any]] = Field(default_factory=list)
     evidence_sufficiency: bool = False
     sufficiency_report: Dict[str, Any] = Field(default_factory=dict)
+    brand_unavailable: Dict[str, Any] = Field(default_factory=dict)  # 品牌不可得（不在库/该品类无货）
     decision_score: float = 0.0
     decision_results: List[Dict[str, Any]] = Field(default_factory=list)  # D5: Top-3
 

@@ -84,7 +84,23 @@ async def retrieval_node(state: AgentState) -> AgentState:
                 logger.info("Brand hard-filter: %d -> %d (brand=%s)", len(results), len(filtered), brand)
             results = filtered
         else:
-            logger.info("Brand filter emptied results (%s), keep semantic order", brand)
+            # 品牌不可得：区分"不在库" vs "在库但该品类无货"，回复层走诚实话术
+            exists = _brand_exists(brand)
+            subs = [slots.sub_category] if slots.sub_category else _parent_sub_categories(query)
+            siblings = _brand_siblings_for_subs(subs, brand)
+            state.brand_unavailable = {
+                "brand": brand,
+                "reason": "brand_not_in_catalog" if not exists else "brand_no_match",
+                "siblings": siblings,
+                "sub_categories": subs,
+            }
+            logger.info(
+                "Brand unavailable: %s (%s), siblings=%s",
+                brand, state.brand_unavailable["reason"], siblings,
+            )
+            state.ranked_items = []
+            state.evidence_list = []
+            return state
 
     # 父级词 → 子类硬过滤（"耐克的鞋子"防上衣混入；sub 已精确时跳过）
     if not slots.sub_category and results:
@@ -130,6 +146,45 @@ def _brand_matches(p: dict, variants: set[str]) -> bool:
     if not pb:
         return False
     return any(v and (v in pb or pb in v) for v in variants)
+
+
+def _brand_exists(brand: str) -> bool:
+    """品牌是否在商品库中存在（别名感知：Nike/耐克 都算）。"""
+    variants = _brand_variants(brand)
+    try:
+        for p in _repo.list_all():
+            pb = (p.brand or "").lower()
+            if any(v and (v in pb or pb in v) for v in variants):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _brand_siblings_for_subs(subs: list[str], excluded_brand: str | None) -> list[str]:
+    """指定子类集合下、排除指定品牌后的其他品牌（取前 3）。"""
+    if not subs:
+        return []
+    try:
+        products = _repo.list_all()
+    except Exception:
+        return []
+    excluded = _brand_variants(excluded_brand) if excluded_brand else set()
+    seen: list[str] = []
+    for p in products:
+        if getattr(p, "sub_category", None) not in subs:
+            continue
+        b = (p.brand or "").strip()
+        if not b:
+            continue
+        pb = b.lower()
+        if any(v and (v in pb or pb in v) for v in excluded):
+            continue
+        if b not in seen:
+            seen.append(b)
+        if len(seen) >= 3:
+            break
+    return seen
 
 
 def _parent_sub_categories(query: str) -> list[str]:
@@ -363,6 +418,24 @@ def _to_product(item: dict) -> Product | None:
 async def response_node(state: AgentState) -> AgentState:
     if state.intent == "chitchat" and not state.ranked_items:
         state.final_response = await _chitchat_answer(state.user_input)
+        return state
+    # 品牌不可得 → 诚实话术 + 同类品牌建议（不硬推其他品牌商品）
+    if state.brand_unavailable:
+        bu = state.brand_unavailable
+        brand = bu.get("brand") or ""
+        subs = bu.get("sub_categories") or []
+        siblings = bu.get("siblings") or []
+        sub_text = "、".join(subs) if subs else "相关商品"
+        if siblings:
+            names = "、".join(siblings)
+            state.final_response = (
+                f"抱歉，商品库里暂时没有 {brand} 的{sub_text}；"
+                f"我们目前有 {names} 等品牌的{sub_text}，要不要看看其他品牌？"
+            )
+        else:
+            state.final_response = (
+                f"抱歉，商品库里暂时没有 {brand} 的{sub_text}，要不要换个品牌或品类试试？"
+            )
         return state
     if not state.ranked_items:
         state.final_response = "抱歉，没有找到匹配的商品～要不要换个关键词，或者放宽预算试试？"
