@@ -79,17 +79,18 @@ def _chat_history(messages: list[dict]) -> list[dict[str, str]]:
 
 
 def _products_payload(state: AgentState) -> list[dict]:
-    return [
-        {
-            "product_id": product.get("product_id", ""),
+    items = []
+    for product in state.ranked_items[:3]:
+        product_id = product.get("product_id", "")
+        items.append({
+            "product_id": product_id,
             "title": product.get("title", ""),
             "brand": product.get("brand", ""),
             "price": product.get("price", 0),
-            "image_url": product.get("image_url", ""),
+            "image_urls": [f"/api/products/{product_id}/image"] if product_id else [],
             "rank_score": product.get("rank_score"),
-        }
-        for product in state.ranked_items[:3]
-    ]
+        })
+    return items
 
 
 def _snapshot_update(state: AgentState) -> dict:

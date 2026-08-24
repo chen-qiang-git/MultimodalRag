@@ -10,7 +10,7 @@ router = APIRouter()
 _repo = get_product_repo()
 
 # Dataset 根目录 (用于图片服务)
-_DATASET_DIR = Path(__file__).resolve().parent.parent.parent.parent / "ecommerce_agent_dataset"
+_DATASET_DIR = Path(__file__).resolve().parent.parent.parent / "ecommerce_agent_dataset"
 
 
 def _build_review_summary(product) -> dict:
