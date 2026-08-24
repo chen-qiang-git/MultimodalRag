@@ -13,6 +13,8 @@ from app.models.order import OrderModel
 from app.models.conversation import ConversationModel, ConversationMessageModel
 from app.models.user_preference_entry import UserPreferenceEntry
 from app.models.product_embedding import ProductEmbeddingModel, ProductChunkEmbeddingModel
+from app.models.user import UserModel
+from app.models.address import AddressModel
 
 __all__ = [
     "Base",
@@ -22,4 +24,5 @@ __all__ = [
     "ConversationModel", "ConversationMessageModel",
     "UserPreferenceEntry",
     "ProductEmbeddingModel", "ProductChunkEmbeddingModel",
+    "UserModel", "AddressModel",
 ]
