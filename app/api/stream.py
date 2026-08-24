@@ -281,9 +281,9 @@ async def recommend_stream(req: StreamRequest):
                 result.user_id,
                 session_id,
             )
-            yield _sse("result", json.dumps({
-                "answer": result.final_response,
-                "products": _products_payload(result),
+            result_payload = _recommendation_payload(result)
+            result_payload.update({
+                "session_id": session_id,
                 "conversation_id": conversation_id,
                 "governor_slots": {
                     **result.slots.model_dump(),
@@ -292,7 +292,8 @@ async def recommend_stream(req: StreamRequest):
                     "candidate_ids": result.candidate_ids,
                     "clarification_question": result.clarification_question,
                 },
-            }, ensure_ascii=False))
+            })
+            yield _sse("result", json.dumps(result_payload, ensure_ascii=False))
         except Exception as exc:
             logger.exception("Android recommendation stream failed")
             yield _sse("error", json.dumps({"message": str(exc)}, ensure_ascii=False))
