@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 本地 Android 联调可使用模拟器或任意局域网宿主机地址。生产环境应使用 HTTPS。 -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

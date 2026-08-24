@@ -54,12 +54,28 @@ python scripts/smoke_graph.py
 覆盖 search / 澄清 / chitchat / brand / direct_answer 五类意图，
 打印 intent、槽位、候选数、Top-1 与最终回复。
 
-## Web 测试台（浏览器联调，Android 暂不接）
+## 本地 Android 联调
+
+Rewrite-RAG 运行在 Windows 宿主机；PostgreSQL、pgvector 与 Redis 保持在现有 Docker 容器中。无需为 Rewrite-RAG 再建立容器。
+
+1. 将 `.env.example` 复制为本地 `.env`，填入 Qwen 密钥，以及 Docker 已发布到 Windows 的 PostgreSQL / Redis 端口。
+2. 确保 `.env` 中 `OMNICART_HOST=0.0.0.0`、`OMNICART_PORT=8006`。这让模拟器和同一局域网内的真机可以访问宿主机服务。
+3. 将 `android-client/local.properties.example` 复制为 `android-client/local.properties`，设置 Android SDK 路径和 `BASE_URL`。
+
+`BASE_URL` 选择规则：
+
+- Android 模拟器使用 `http://10.0.2.2:8006/`；`10.0.2.2` 会映射到 Windows 宿主机。
+- 物理 Android 设备使用 `http://<Windows-宿主机局域网-IP>:8006/`；手机和电脑需在同一局域网，并允许 Windows 防火墙放行该端口。
+- Android 中的 `localhost` 与 `127.0.0.1` 指向设备自己，不能用于访问 Windows 后端。
+
+本地联调为 HTTP 明文开发模式；交付或公网部署时必须改用 HTTPS，并收紧 `network_security_config.xml`。
+
+## Web 测试台
 
 ```bash
-python run.py            # 默认 127.0.0.1:8007，热重载开启（改代码自动重启）
+python run.py            # 使用 .env 的 OMNICART_HOST / OMNICART_PORT，热重载开启
 ```
 
-浏览器打开 <http://127.0.0.1:8007/>，左侧多轮对话，右侧实时展示每轮 Governor 槽位。
+浏览器打开 `http://127.0.0.1:<OMNICART_PORT>/`，左侧多轮对话，右侧实时展示每轮 Governor 槽位。
 会话记忆在进程内（重启清空），支持追问、指代消解、P9 直答（如"刚才那款能带上飞机吗"）。
 关闭热重载：`python run.py --no-reload`

@@ -12,6 +12,11 @@ venv/
 .idea/
 .vscode/
 
+# Android local machine state and generated outputs
+android-client/local.properties
+android-client/.gradle/
+android-client/**/build/
+
 # 运行产物
 data/checkpoints/
 data/traces/

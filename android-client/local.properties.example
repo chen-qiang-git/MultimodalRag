@@ -1,0 +1,6 @@
+# Android SDK path is machine-specific. Copy this file to local.properties and edit it.
+sdk.dir=C\:\\Android\\Sdk
+
+# Android Emulator: http://10.0.2.2:8006/
+# Physical device: http://<windows-host-lan-ip>:8006/
+BASE_URL=http://10.0.2.2:8006/
