@@ -18,6 +18,10 @@ PORT: int = int(_env("OMNICART_PORT", "8006"))
 # ---- Qwen API 密钥（模型名在 model_gateway/model_config.yaml 中管理）----
 QWEN_API_KEY: str = _env("QWEN_API_KEY", "")
 QWEN_BASE_URL: str = _env("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/api/v1")
+QWEN_COMPATIBLE_BASE_URL: str = _env(
+    "QWEN_COMPATIBLE_BASE_URL",
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
 
 # ---- 检索 ----
 DEFAULT_TOP_K: int = int(_env("OMNICART_DEFAULT_TOP_K", "10"))

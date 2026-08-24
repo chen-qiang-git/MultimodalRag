@@ -1,7 +1,7 @@
 import json
 import httpx
 from typing import AsyncGenerator
-from app.core.config import QWEN_API_KEY, QWEN_BASE_URL
+from app.core.config import QWEN_API_KEY, QWEN_COMPATIBLE_BASE_URL
 
 _client: httpx.AsyncClient | None = None
 
@@ -16,7 +16,7 @@ def _get_client() -> httpx.AsyncClient:
 class QwenChat:
     def __init__(self, model: str = "qwen-plus", temperature: float = 0.7, max_tokens: int = 2048):
         self._api_key = QWEN_API_KEY
-        self._base_url = QWEN_BASE_URL.rstrip("/")
+        self._base_url = QWEN_COMPATIBLE_BASE_URL.rstrip("/")
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
@@ -34,24 +34,22 @@ class QwenChat:
         messages = self._build_messages(prompt, system)
         client = _get_client()
         resp = await client.post(
-            f"{self._base_url}/services/aigc/text-generation/generation",
+            f"{self._base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
             },
             json={
                 "model": self._model,
-                "input": {"messages": messages},
-                "parameters": {
-                    "temperature": self._temperature,
-                    "max_tokens": self._max_tokens,
-                },
+                "messages": messages,
+                "temperature": self._temperature,
+                "max_tokens": self._max_tokens,
             },
         )
         resp.raise_for_status()
         data = resp.json()
         self.last_usage = data.get("usage", {}) or {}  # 真实 token 用量
-        return data["output"]["text"]
+        return data["choices"][0]["message"].get("content") or ""
 
     async def generate_stream(self, prompt: str, system: str = "") -> AsyncGenerator[str, None]:
         """流式生成 — 每个 token 到达即 yield。"""
@@ -59,21 +57,18 @@ class QwenChat:
         client = _get_client()
         async with client.stream(
             "POST",
-            f"{self._base_url}/services/aigc/text-generation/generation",
+            f"{self._base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
-                # DashScope 通过此请求头启用 HTTP Server-Sent Events。
-                "X-DashScope-SSE": "enable",
             },
             json={
                 "model": self._model,
-                "input": {"messages": messages},
-                "parameters": {
-                    "temperature": self._temperature,
-                    "max_tokens": self._max_tokens,
-                    "incremental_output": True,
-                },
+                "messages": messages,
+                "temperature": self._temperature,
+                "max_tokens": self._max_tokens,
+                "stream": True,
+                "stream_options": {"include_usage": True},
             },
         ) as resp:
             resp.raise_for_status()
@@ -82,11 +77,12 @@ class QwenChat:
                 if not line or not line.startswith("data:"):
                     continue
                 data_str = line[5:].strip()
-                if not data_str:
+                if not data_str or data_str == "[DONE]":
                     continue
                 try:
                     chunk = json.loads(data_str)
-                    text = chunk.get("output", {}).get("text", "")
+                    choices = chunk.get("choices") or []
+                    text = (choices[0].get("delta", {}).get("content") or "") if choices else ""
                     # 流式最后一帧携带完整 usage，缓存覆盖（之前被丢弃 → token 统计失真）
                     if chunk.get("usage"):
                         self.last_usage = chunk["usage"]
