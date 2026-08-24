@@ -190,8 +190,13 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
     # 阶段4：条件治理（BudgetGovernor — D1 不允许 LLM 做算术）
     slots = normalize_slots(slots)
 
+    # 宽泛场景需求（如“去爬山/去三亚旅游”）由规则稳定路由到跨品类推荐。
+    # 已指定具体品类或子类时仍保留普通检索，避免把“爬山背包”发散成整套装备。
+    if slots.scene and not slots.category and not slots.sub_category:
+        slots.intent = "scene_search"
+
     # 全新完整需求 → 强制 search + 回填规则品类
-    if fresh:
+    if fresh and slots.intent != "scene_search":
         slots.intent = "search"
         if not slots.category:
             slots.category = detect_category(user_query)
