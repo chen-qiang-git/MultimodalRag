@@ -485,6 +485,13 @@ async def decision_node(state: AgentState) -> AgentState:
     results.sort(key=lambda r: r["final_score"], reverse=True)
     state.decision_results = results[:3]  # D5: 固定推荐 Top-3
     state.decision_score = results[0]["final_score"] if results else 0.0
+
+    # 7维定序：把 ranked_items 同步为 final_score 顺序（回复/展示与评分完全一致）
+    order = {r["product_id"]: i for i, r in enumerate(results)}
+    state.ranked_items = sorted(
+        state.ranked_items,
+        key=lambda p: order.get(p.get("product_id", ""), 999),
+    )
     return state
 
 
