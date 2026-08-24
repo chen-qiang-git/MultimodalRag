@@ -861,8 +861,12 @@ fun SummaryChips(response: com.omnicart.agent.core.model.RecommendResponse) {
                 onClick = {},
                 label = { Text(if (harPassed) "Harness 通过" else "Harness 待查", style = MaterialTheme.typography.labelSmall) },
                 leadingIcon = {
-                    Icon(Icons.Filled.Refresh, null, Modifier.size(14.dp),
-                        tint = if (harPassed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = if (harPassed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
                 },
                 modifier = Modifier.height(28.dp),
             )
