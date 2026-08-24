@@ -12,6 +12,7 @@ from langgraph.graph import END, StateGraph
 from app.governor.nodes import build_governor, clarification_node
 from app.schemas.agent_state import AgentState
 from app.workflow.direct_answer import direct_answer_node
+from app.workflow.shop_action import shop_action_node
 from app.workflow.nodes import (
     decision_node,
     evidence_check_node,
@@ -25,6 +26,8 @@ from app.workflow.nodes import (
 def _router(state: AgentState) -> str:
     if state.intent == "chitchat":
         return "response"
+    if state.intent == "shop_action":
+        return "shop_action"
     if state.intent == "direct_answer":
         return "direct_answer"
     if state.needs_clarification:
@@ -41,6 +44,7 @@ def build_workflow() -> StateGraph:
     wf.add_node("governor", build_governor())
     wf.add_node("clarification", clarification_node)
     wf.add_node("direct_answer", direct_answer_node)
+    wf.add_node("shop_action", shop_action_node)
     wf.add_node("retrieval", retrieval_node)
     wf.add_node("reranker", reranker_node)
     wf.add_node("evidence_check", evidence_check_node)
@@ -54,12 +58,14 @@ def build_workflow() -> StateGraph:
         {
             "clarification": "clarification",
             "direct_answer": "direct_answer",
+            "shop_action": "shop_action",
             "retrieval": "retrieval",
             "response": "response",
         },
     )
     wf.add_edge("clarification", END)
     wf.add_edge("direct_answer", END)
+    wf.add_edge("shop_action", END)
     wf.add_edge("retrieval", "reranker")
     wf.add_edge("reranker", "evidence_check")
     wf.add_conditional_edges(
