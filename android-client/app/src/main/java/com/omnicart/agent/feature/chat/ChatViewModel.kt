@@ -533,7 +533,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadConversation(conversationId: String) {
+    fun loadConversation(conversation: com.omnicart.agent.core.network.ConversationItem) {
+        val conversationId = conversation.conversationId
         _uiState.update { it.copy(isLoadingConversation = true, showHistorySheet = false) }
         viewModelScope.launch {
             try {
@@ -559,6 +560,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _uiState.update {
                     it.copy(
+                        sessionId = conversation.sessionId.ifBlank { it.sessionId },
                         conversationId = conversationId,
                         messages = historyMessages,
                         isLoadingConversation = false,

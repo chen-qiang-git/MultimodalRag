@@ -23,7 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -248,15 +248,13 @@ fun ChatScreen(
                             )
                         }
                     }
-                    // 历史按钮 — 仅登录用户可见
-                    if (AuthManager.userId.isNotBlank()) {
-                        IconButton(onClick = { viewModel.toggleHistorySheet() }) {
-                            Icon(
-                                Icons.Filled.Refresh,
-                                contentDescription = "历史聊天",
-                                tint = OnPrimary,
-                            )
-                        }
+                    // 历史按钮：登录用户和设备匿名用户都可恢复各自的持久化会话。
+                    IconButton(onClick = { viewModel.toggleHistorySheet() }) {
+                        Icon(
+                            Icons.Filled.History,
+                            contentDescription = "历史聊天",
+                            tint = OnPrimary,
+                        )
                     }
                 }
             }
@@ -620,7 +618,7 @@ fun ChatScreen(
             ConversationListSheet(
                 conversations = uiState.conversations,
                 isLoading = uiState.isLoadingHistory,
-                onSelect = { conv -> viewModel.loadConversation(conv.conversationId) },
+                onSelect = { conv -> viewModel.loadConversation(conv) },
                 onNewConversation = { viewModel.onNewConversation() },
                 onDismiss = { viewModel.toggleHistorySheet() },
                 onDelete = { conv -> viewModel.deleteConversation(conv.conversationId) },
