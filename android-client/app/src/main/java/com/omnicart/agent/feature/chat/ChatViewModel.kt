@@ -307,6 +307,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             fullText += text
                             _uiState.update { it.copy(streamingText = fullText) }
                         }
+                        "replace" -> {
+                            val text = try {
+                                com.google.gson.JsonParser.parseString(event.data).asJsonObject.get("text")?.asString ?: ""
+                            } catch (_: Exception) { "" }
+                            if (text.isNotBlank()) {
+                                fullText = text
+                                _uiState.update { it.copy(streamingText = fullText) }
+                            }
+                        }
                         "result" -> {
                             try {
                                 resultData = com.google.gson.JsonParser.parseString(event.data).asJsonObject

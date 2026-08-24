@@ -121,6 +121,8 @@ class AgentState(BaseModel):
 
     # ---- 最终回复 ----
     final_response: str = ""
+    # SSE 端点先完成检索/决策，再由真实模型 token 流生成回复。
+    defer_response: bool = False
 
     # ---- 可观测性  trace_steps  记录经过了哪些节点，方便排查 Bug----
     trace_steps: List[Dict[str, Any]] = Field(default_factory=list)

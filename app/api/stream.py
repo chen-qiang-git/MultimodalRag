@@ -14,6 +14,7 @@ from app.schemas.agent_state import AgentState
 from app.schemas.cart import DEMO_USER_ID
 from app.services.conversation_service import get_conversation_service
 from app.workflow.graph import run_agent
+from app.workflow.nodes import stream_response
 
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,7 @@ async def _run_compat_recommendation(
     session_id: str,
     conversation_id: str,
     image_url: str | None = None,
+    defer_response: bool = False,
 ) -> tuple[AgentState, str, str]:
     resolved_user_id = user_id or DEMO_USER_ID
     resolved_session_id = session_id or f"android-{uuid.uuid4().hex[:8]}"
@@ -173,21 +175,36 @@ async def _run_compat_recommendation(
         image_url=image_url,
         chat_history=_chat_history(context["recent_messages"]),
         context_snapshot=context["context_snapshot"],
+        defer_response=defer_response,
     ))
+    if not defer_response:
+        await _persist_recommendation(
+            result, conversation_service, resolved_conversation_id,
+            resolved_user_id, resolved_session_id,
+        )
+    return result, resolved_session_id, resolved_conversation_id
+
+
+async def _persist_recommendation(
+    result: AgentState,
+    conversation_service,
+    conversation_id: str,
+    user_id: str,
+    session_id: str,
+) -> None:
     products = _products_payload(result)
     await conversation_service.aappend_assistant_message(
-        conversation_id=resolved_conversation_id,
-        user_id=resolved_user_id,
-        session_id=resolved_session_id,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        session_id=session_id,
         content=result.final_response,
         product_refs=[product["product_id"] for product in products if product["product_id"]],
         evidence_refs=result.evidence_list,
     )
     await conversation_service.aupdate_context_snapshot(
-        resolved_conversation_id,
+        conversation_id,
         _snapshot_update(result),
     )
-    return result, resolved_session_id, resolved_conversation_id
 
 
 @router.post("/v2")
@@ -242,16 +259,28 @@ async def recommend_guide(req: GuideRequest):
 async def recommend_stream(req: StreamRequest):
     async def gen():
         try:
-            result, _, conversation_id = await _run_compat_recommendation(
+            result, session_id, conversation_id = await _run_compat_recommendation(
                 user_query=req.message,
                 user_id=req.user_id,
                 session_id=req.session_id,
                 conversation_id=req.conversation_id,
                 image_url=req.image_url,
+                defer_response=True,
             )
-            for character in result.final_response:
-                yield _sse("token", json.dumps({"text": character}, ensure_ascii=False))
-                await asyncio.sleep(0)
+            sent_answer = ""
+            async for token in stream_response(result):
+                sent_answer += token
+                yield _sse("token", json.dumps({"text": token}, ensure_ascii=False))
+            if result.final_response != sent_answer:
+                yield _sse("replace", json.dumps({"text": result.final_response}, ensure_ascii=False))
+
+            await _persist_recommendation(
+                result,
+                get_conversation_service(),
+                conversation_id,
+                result.user_id,
+                session_id,
+            )
             yield _sse("result", json.dumps({
                 "answer": result.final_response,
                 "products": _products_payload(result),

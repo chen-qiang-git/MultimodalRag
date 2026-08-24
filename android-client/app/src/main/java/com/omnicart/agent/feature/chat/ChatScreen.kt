@@ -88,8 +88,10 @@ fun ChatScreen(
     // 自动滚动到底部（新消息 + 流式输出时都触发）
     LaunchedEffect(uiState.messages.size, uiState.isLoading, uiState.streamingText.length) {
         if (uiState.messages.isNotEmpty() || uiState.streamingText.isNotEmpty()) {
-            val target = if (uiState.messages.isNotEmpty()) uiState.messages.size - 1 else 0
-            listState.animateScrollToItem(target)
+            val lastItem = listState.layoutInfo.totalItemsCount - 1
+            if (lastItem >= 0) {
+                listState.animateScrollToItem(lastItem)
+            }
         }
     }
 

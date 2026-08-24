@@ -518,29 +518,14 @@ def _to_product(item: dict) -> Product | None:
 # ================================================================
 
 async def response_node(state: AgentState) -> AgentState:
+    if state.defer_response:
+        return state
     if state.intent == "chitchat" and not state.ranked_items:
         state.final_response = await _chitchat_answer(state.user_input)
         return state
-    # 品牌不可得 → 诚实话术 + 同类品牌建议（不硬推其他品牌商品）
-    if state.brand_unavailable:
-        bu = state.brand_unavailable
-        brand = bu.get("brand") or ""
-        subs = bu.get("sub_categories") or []
-        siblings = bu.get("siblings") or []
-        sub_text = "、".join(subs) if subs else "相关商品"
-        if siblings:
-            names = "、".join(siblings)
-            state.final_response = (
-                f"抱歉，商品库里暂时没有 {brand} 的{sub_text}；"
-                f"我们目前有 {names} 等品牌的{sub_text}，要不要看看其他品牌？"
-            )
-        else:
-            state.final_response = (
-                f"抱歉，商品库里暂时没有 {brand} 的{sub_text}，要不要换个品牌或品类试试？"
-            )
-        return state
-    if not state.ranked_items:
-        state.final_response = "抱歉，没有找到匹配的商品～要不要换个关键词，或者放宽预算试试？"
+    direct_answer = _direct_response(state)
+    if direct_answer:
+        state.final_response = direct_answer
         return state
 
     top = state.ranked_items[:3]
@@ -561,6 +546,61 @@ async def response_node(state: AgentState) -> AgentState:
         if hint and "商品库" not in answer:
             state.final_response = f"{state.final_response}\n\n{hint}"
     return state
+
+
+def _direct_response(state: AgentState) -> str:
+    """无需模型生成的诚实回复，供普通与 SSE 回复链路共用。"""
+    if state.brand_unavailable:
+        bu = state.brand_unavailable
+        brand = bu.get("brand") or ""
+        subs = bu.get("sub_categories") or []
+        siblings = bu.get("siblings") or []
+        sub_text = "、".join(subs) if subs else "相关商品"
+        if siblings:
+            names = "、".join(siblings)
+            return (
+                f"抱歉，商品库里暂时没有 {brand} 的{sub_text}；"
+                f"我们目前有 {names} 等品牌的{sub_text}，要不要看看其他品牌？"
+            )
+        return f"抱歉，商品库里暂时没有 {brand} 的{sub_text}，要不要换个品牌或品类试试？"
+    if not state.ranked_items:
+        return "抱歉，没有找到匹配的商品～要不要换个关键词，或者放宽预算试试？"
+    return ""
+
+
+async def stream_response(state: AgentState):
+    """真实转发模型 token；结束后把完整回答写回 state。"""
+    if state.intent == "chitchat" and not state.ranked_items:
+        prompt = CHITCHAT_PROMPT.format(query=state.user_input)
+        top: list[dict] = []
+    else:
+        direct_answer = _direct_response(state)
+        if direct_answer:
+            state.final_response = direct_answer
+            yield direct_answer
+            return
+        top = state.ranked_items[:3]
+        prompt = build_response_prompt(top, state.slots.spec_keywords)
+
+    fragments: list[str] = []
+    try:
+        async for token in _gateway.chat_stream("chat_generation", prompt):
+            fragments.append(token)
+            yield token
+    except Exception:
+        state.final_response = _template_answer(top) if top else "抱歉，暂时无法回答你的问题。"
+        return
+
+    answer = "".join(fragments).strip()
+    if top and (len(answer) < 10 or not _cites_products(answer, top)):
+        answer = _template_answer(top)
+    elif not answer:
+        answer = "抱歉，暂时无法回答你的问题。"
+    if 0 < len(top) < 3:
+        hint = _low_stock_hint(top, state.slots.brand)
+        if hint and "商品库" not in answer:
+            answer = f"{answer}\n\n{hint}"
+    state.final_response = answer
 
 
 async def _chitchat_answer(query: str) -> str:
@@ -678,5 +718,6 @@ def _sibling_brands(top: list[dict], current_brand: str | None) -> list[str]:
 # ================================================================
 
 def guard_node(state: AgentState) -> AgentState:
-    _guard.check(state)
+    if not state.defer_response:
+        _guard.check(state)
     return state
