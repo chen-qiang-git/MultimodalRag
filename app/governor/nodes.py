@@ -94,6 +94,14 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
     # 阶段3：P1 槽位编译（一次 LLM）
     slots = await _compile_slots(state, query_for_resolve, user_query, snapshot, pre, fresh)
 
+    # 用户原文明确写出的购买品牌不能依赖 LLM 漏抽取。
+    # 排除片段会先被移除，避免“不要苹果”被误判为要买 Apple。
+    explicit_brand = _detect_explicit_brand(user_query, pre.get("exclude_hint"))
+    if explicit_brand and not slots.brand:
+        slots.brand = explicit_brand
+        slots.rewritten_query = user_query
+        logger.info("explicit brand fallback: %s", explicit_brand)
+
     # P0-B: sub_category 确定性兜底（LLM 缺失/非规范 → 规则映射 → 父级词转 spec_keyword）
     sub, parent_kw = _resolve_sub_category(user_query, slots.category, slots.sub_category)
     slots.sub_category = sub
