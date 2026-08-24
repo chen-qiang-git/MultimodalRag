@@ -41,7 +41,7 @@ async def direct_answer_node(state: AgentState) -> AgentState:
         if last_products and isinstance(last_products[0], dict):
             pid = last_products[0].get("product_id")
     if not pid:
-        state.final_response = "你指的是哪一款呀？告诉豆仔是刚才推荐的第几个，或者直接说商品名～"
+        state.final_response = "你指的是哪一款呀？告诉松仔是刚才推荐的第几个，或者直接说商品名～"
         return state
 
     product = None
@@ -51,7 +51,7 @@ async def direct_answer_node(state: AgentState) -> AgentState:
         logger.warning("direct_answer: get_by_id failed: %s", e)
 
     if product is None:
-        state.final_response = "抱歉，豆仔没找到你问的那款商品，要不要换个说法试试？"
+        state.final_response = "抱歉，松仔没找到你问的那款商品，要不要换个说法试试？"
         return state
 
     faqs = _faq_list(product)
@@ -150,7 +150,7 @@ def _fallback_answer(
         return f"关于「{q}」：{a}"
     if _is_overview_request(question):
         return _overview_answer(product, mkt, reviews)
-    return "豆仔查了商品资料，没找到这个信息，建议到商品详情页确认一下～"
+    return "松仔查了商品资料，没找到这个信息，建议到商品详情页确认一下～"
 
 
 def _is_overview_request(question: str) -> bool:
@@ -169,7 +169,7 @@ def _overview_answer(product, mkt: str, reviews: list[tuple[str, int, str]]) -> 
     if reviews:
         good = sum(1 for _nick, rating, _c in reviews if rating >= 4)
         parts.append(f"用户评价整体不错，好评 {good}/{len(reviews)} 条～")
-    parts.append("想了解更具体的细节（比如能不能上飞机、支持什么协议），随时问豆仔～")
+    parts.append("想了解更具体的细节（比如能不能上飞机、支持什么协议），随时问松仔～")
     return "。".join(parts)
 
 

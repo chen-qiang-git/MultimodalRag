@@ -162,7 +162,7 @@
   <div class="main">
     <div class="chat-panel">
       <div class="messages" id="messages">
-        <div class="empty" id="emptyHint">开始和豆仔对话吧～试试"推荐100以内的控油洗面奶"，然后追问"便宜一点"或"第二个怎么样"</div>
+        <div class="empty" id="emptyHint">开始和松仔对话吧～试试"推荐100以内的控油洗面奶"，然后追问"便宜一点"或"第二个怎么样"</div>
       </div>
       <div class="input-area">
         <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" onkeydown="onKey(event)"></textarea>
@@ -198,7 +198,7 @@ function newConversation() {
 }
 
 function clearAll() {
-  $('messages').innerHTML = '<div class="empty" id="emptyHint">开始和豆仔对话吧～试试"推荐100以内的控油洗面奶"，然后追问"便宜一点"或"第二个怎么样"</div>';
+  $('messages').innerHTML = '<div class="empty" id="emptyHint">开始和松仔对话吧～试试"推荐100以内的控油洗面奶"，然后追问"便宜一点"或"第二个怎么样"</div>';
   $('slotsList').innerHTML = '<div class="empty">每次对话后，此处展示该轮 Governor 解析出的槽位（未进入检索/回答前）</div>';
   turnCounter = 0;
   history = [];
@@ -311,7 +311,7 @@ function buildAnnotationText() {
   for (let h of history) {
     lines.push('===== 第 ' + h.turn + ' 轮 =====');
     lines.push('[用户输入] ' + h.user);
-    lines.push('[豆仔回复] ' + h.bot);
+    lines.push('[松仔回复] ' + h.bot);
     lines.push('[改写query] ' + (h.slots.rewritten_query || ''));
     lines.push('[意图] ' + (h.slots.intent || '') + '  [置信度] ' + (h.slots.confidence != null ? h.slots.confidence : ''));
     if (h.slots.resolved_product_id) lines.push('[锁定商品] ' + h.slots.resolved_product_id);

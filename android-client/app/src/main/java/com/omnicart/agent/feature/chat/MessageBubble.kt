@@ -44,8 +44,8 @@ fun MessageBubble(
         ) {
             if (type == BubbleType.Assistant) {
                 Image(
-                    painter = painterResource(id = R.drawable.ic_douzai),
-                    contentDescription = "豆仔",
+                    painter = painterResource(id = R.drawable.ic_songzai),
+                    contentDescription = "松仔",
                     modifier = Modifier
                         .size(28.dp)
                         .clip(RoundedCornerShape(14.dp)),

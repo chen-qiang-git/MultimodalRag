@@ -21,7 +21,7 @@ _COMPRESSION_SYSTEM = (
     "1. 只保留事实：用户需求、约束、偏好、已推荐商品、风险提示、态度反馈\n"
     "2. 不编造、不推测、不评价用户的选择\n"
     "3. 如果用户表达了对推荐的态度（喜欢/不喜欢/太贵/不合适），必须记录\n"
-    "4. 如果有豆仔提出但用户尚未回答的问题，记录为 open_question\n"
+    "4. 如果有松仔提出但用户尚未回答的问题，记录为 open_question\n"
     "5. 输出 JSON 格式，不要其他内容\n\n"
     '格式: {"summary": "摘要", "open_question": "未回答问题"|null}'
 )
@@ -29,7 +29,7 @@ _COMPRESSION_SYSTEM = (
 _COMPRESSION_USER = (
     "历史摘要: {prev_summary}\n"
     "本轮用户: {last_query}\n"
-    "豆仔回复: {last_answer}\n"
+    "松仔回复: {last_answer}\n"
     "待回答: {pending_question}\n\n"
     "请更新摘要 JSON:"
 )

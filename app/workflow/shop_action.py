@@ -67,7 +67,7 @@ async def shop_action_node(state: AgentState) -> AgentState:
     else:  # add
         pid = _resolve_add_target(state)
         if not pid:
-            state.final_response = "你想把哪一款加入购物车呀？告诉豆仔是第几个，或者直接说商品名～"
+            state.final_response = "你想把哪一款加入购物车呀？告诉松仔是第几个，或者直接说商品名～"
         else:
             res = add_to_cart(user_id, pid)
             if res["ok"]:
@@ -76,7 +76,7 @@ async def shop_action_node(state: AgentState) -> AgentState:
                     f"当前共 {res['cart_count']} 件。要结算的话跟我说'结算'哦！"
                 )
             else:
-                state.final_response = "抱歉，豆仔没找到这款商品，换个说法试试～"
+                state.final_response = "抱歉，松仔没找到这款商品，换个说法试试～"
 
     state.trace_steps.append({
         "step_id": f"T{len(state.trace_steps) + 1:03d}",
@@ -118,7 +118,7 @@ def _remove_cart_item(state, cart_repo, user_id: str, q: str) -> str:
     cart = cart_repo.get_cart(user_id)
     target = _resolve_cart_target(state, cart.items, q)
     if not target:
-        return "想删掉哪一件呢？告诉豆仔是第几个，或者直接说商品名～"
+        return "想删掉哪一件呢？告诉松仔是第几个，或者直接说商品名～"
     cart_repo.remove_item(target.cart_item_id, user_id)
     remain = len(cart_repo.get_cart(user_id).items)
     return f"已帮你把【{target.title[:32]}】移出购物车，剩余 {remain} 件～"
@@ -128,7 +128,7 @@ def _update_quantity(state, cart_repo, user_id: str, q: str) -> str:
     cart = cart_repo.get_cart(user_id)
     target = _resolve_cart_target(state, cart.items, q)
     if not target:
-        return "想改哪一件的数量呢？告诉豆仔是第几个，或者直接说商品名～"
+        return "想改哪一件的数量呢？告诉松仔是第几个，或者直接说商品名～"
     new_qty = _parse_new_quantity(q, target.quantity)
     if new_qty is None:
         return f"【{target.title[:32]}】现在是 {target.quantity} 件，想改成几件呀？"

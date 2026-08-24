@@ -270,7 +270,7 @@ def validate_node(state: AgentState) -> AgentState:
 # ================================================================
 
 async def clarification_node(state: AgentState) -> AgentState:
-    """追问节点：读 PG 真实子类列表 → P3 生成豆仔风格选择题 → 写入 final_response。"""
+    """追问节点：读 PG 真实子类列表 → P3 生成松仔风格选择题 → 写入 final_response。"""
     category = state.slots.category or detect_category(state.user_input)
     subs: list[str] = []
     if category:
@@ -613,7 +613,7 @@ def _spawn_profile_task(coro) -> None:
 def _clarification_fallback(category: str, subs: list[str]) -> str:
     top = subs[:4]
     return (
-        f"嘿嘿，豆仔发现您想买{category}的好物呢！🎁 "
+        f"嘿嘿，松仔发现您想买{category}的好物呢！🎁 "
         f"请问您更想看【{'】、【'.join(top)}】中的哪一类呀？"
     )
 

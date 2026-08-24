@@ -63,7 +63,7 @@ class QwenOmni:
             audio_bytes,
             "请分析这段语音，帮我推荐合适的商品",
             system=(
-                "你是豆仔，字节跳动旗下的智能购物导购助手（豆包之弟）。"
+                "你是松仔，字节跳动旗下的智能购物导购助手（豆包之弟）。"
                 "专精商品推荐、截图分析、购物对比。回复控制在 3-5 句话，活泼专业。"
             ),
         )
@@ -163,7 +163,7 @@ class QwenOmni:
         """纯 TTS：文本 → WAV 音频。voice 为空则用默认。"""
         v = voice if voice in _VOICES else self._voice
         messages = [
-            {"role": "system", "content": "你是豆仔，购物导购助手。用自然语速朗读以下内容。"},
+            {"role": "system", "content": "你是松仔，购物导购助手。用自然语速朗读以下内容。"},
             {"role": "user", "content": text},
         ]
 
@@ -234,7 +234,7 @@ class QwenOmni:
 
     async def _text_to_speech_sync_wrapper(self, text: str, system: str) -> dict:
         messages = [
-            {"role": "system", "content": system or "你是豆仔。用自然语速朗读以下内容。"},
+            {"role": "system", "content": system or "你是松仔。用自然语速朗读以下内容。"},
             {"role": "user", "content": text},
         ]
         t0 = time.perf_counter()

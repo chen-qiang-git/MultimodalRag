@@ -624,20 +624,20 @@ async def _chitchat_answer(query: str) -> str:
 def _chitchat_fallback(query: str) -> str:
     q = query.lower().strip()
     if any(w in q for w in ("你好", "嗨", "哈喽", "hello", "hi", "在吗")):
-        return "嗨！我是豆仔，你的智能购物导购助手~ 想买什么？直接告诉我就好，还能拍照识图哦！"
+        return "嗨！我是松仔，你的智能购物导购助手~ 想买什么？直接告诉我就好，还能拍照识图哦！"
     if any(w in q for w in ("你是谁", "你叫什么", "介绍你自己")):
-        return "我是豆仔，字节跳动旗下的智能购物导购助手，豆包的弟弟！专精商品推荐、截图分析和对比评测～"
+        return "我是松仔，字节跳动旗下的智能购物导购助手，豆包的弟弟！专精商品推荐、截图分析和对比评测～"
     if any(w in q for w in ("你能做什么", "你会什么", "功能")):
         return "我能帮你：\n🔍 根据需求推荐商品\n📊 对比分析\n🛒 直接加购下单\n想试试哪个？"
     if any(w in q for w in ("谢谢", "感谢", "多谢")):
         return "不客气~ 随时找我，购物愉快！"
     if any(w in q for w in ("拜拜", "再见", "晚安")):
-        return "再见！逛累了随时来找我，豆仔随时在线~"
-    return "嘿嘿，豆仔在呢！想买点什么？告诉我品类、预算或者使用场景都行～"
+        return "再见！逛累了随时来找我，松仔随时在线~"
+    return "嘿嘿，松仔在呢！想买点什么？告诉我品类、预算或者使用场景都行～"
 
 
 def _template_answer(top: list[dict]) -> str:
-    lines = ["豆仔帮你挑好了～"]
+    lines = ["松仔帮你挑好了～"]
     for i, p in enumerate(top, 1):
         price = p.get("price")
         price_str = f"¥{int(price)}" if price else "价格见详情"
@@ -670,16 +670,16 @@ def _low_stock_hint(top: list[dict], current_brand: str | None) -> str:
     subs = sorted({p.get("sub_category") for p in top if p.get("sub_category")})
     n = len(top)
     if not subs:
-        return f"目前商品库中符合条件的有 {n} 款，想看看其他选择也可以，告诉豆仔就行～"
+        return f"目前商品库中符合条件的有 {n} 款，想看看其他选择也可以，告诉松仔就行～"
     sub_text = "、".join(subs)
     siblings = _sibling_brands(top, current_brand)
     if siblings:
         names = "、".join(siblings)
         return (
             f"目前商品库中符合条件的有 {n} 款；我们还有 {names} 等品牌的{sub_text}，"
-            "不过豆仔先不展开具体商品，想看其他品牌的话告诉我～"
+            "不过松仔先不展开具体商品，想看其他品牌的话告诉我～"
         )
-    return f"目前商品库中符合条件的有 {n} 款{sub_text}，想看看其他品牌也可以，告诉豆仔就行～"
+    return f"目前商品库中符合条件的有 {n} 款{sub_text}，想看看其他品牌也可以，告诉松仔就行～"
 
 
 def _sibling_brands(top: list[dict], current_brand: str | None) -> list[str]:

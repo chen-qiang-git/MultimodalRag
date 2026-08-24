@@ -85,7 +85,7 @@ class MockChat:
                     "retrieval_channels": [],
                 }, ensure_ascii=False)
 
-        # 2. 单字肯定回复 → 从上一轮豆仔回复推断品类
+        # 2. 单字肯定回复 → 从上一轮松仔回复推断品类
         if q_lower in self._AFFIRMATIVE_WORDS:
             return self._infer_from_last_answer(prompt, q_lower)
 
@@ -125,15 +125,15 @@ class MockChat:
         """单字肯定回复 → 从上下文推断品类线索。
 
         优先检查 pending_question (显式标记的问句)，
-        其次检查 豆仔回复 全文。
+        其次检查 松仔回复 全文。
         """
         # 1. 优先: pending_question
-        m = re.search(r'豆仔上一轮问了用户一个问题.*?「(.+?)」', prompt, re.DOTALL)
+        m = re.search(r'松仔上一轮问了用户一个问题.*?「(.+?)」', prompt, re.DOTALL)
         search_text = m.group(1) if m else ""
 
-        # 2. 次选: 上一轮豆仔回复
+        # 2. 次选: 上一轮松仔回复
         if not search_text:
-            m = re.search(r'上一轮豆仔回复.*?「(.+?)」', prompt, re.DOTALL)
+            m = re.search(r'上一轮松仔回复.*?「(.+?)」', prompt, re.DOTALL)
             search_text = m.group(1) if m else ""
 
         if not search_text:
@@ -201,21 +201,21 @@ class MockChat:
         q = query.lower()
 
         if any(w in q for w in ["你好", "嗨", "哈喽", "hello", "hi", "在吗"]):
-            return "嗨！我是豆仔，你的智能购物导购助手~ 想买什么？直接告诉我就好！"
+            return "嗨！我是松仔，你的智能购物导购助手~ 想买什么？直接告诉我就好！"
         if any(w in q for w in ["你是谁", "你叫什么", "你的名字"]):
-            return "我是豆仔，字节跳动旗下的智能购物导购助手，豆包的弟弟！专精商品推荐和对比评测~"
+            return "我是松仔，字节跳动旗下的智能购物导购助手，豆包的弟弟！专精商品推荐和对比评测~"
         if any(w in q for w in ["你能做什么", "你会什么", "功能"]):
             return "我能帮你推荐商品、拍照识别、对比分析、直接加购！想试试哪个？"
         if any(w in q for w in ["谢谢", "感谢"]):
             return "不客气~ 随时找我！"
         if any(w in q for w in ["想你", "爱你", "喜欢你"]):
-            return "哎呀我也想你呀～豆仔一直在等你来逛呢！想买点什么？"
+            return "哎呀我也想你呀～松仔一直在等你来逛呢！想买点什么？"
         if any(w in q for w in ["好累", "累了", "好困", "困了", "好饿", "饿了", "吃饭", "想吃"]):
-            return "辛苦啦！饿了可不能拖～要不要一起挑点香喷喷的零食？酥脆的、软糯的、酸酸甜甜的……豆仔都帮你盯着呢！"
+            return "辛苦啦！饿了可不能拖～要不要一起挑点香喷喷的零食？酥脆的、软糯的、酸酸甜甜的……松仔都帮你盯着呢！"
         if any(w in q for w in ["无聊", "好无聊"]):
-            return "无聊的时候最适合逛好东西啦！要不要豆仔给你推荐点新奇有趣的小玩意儿？"
+            return "无聊的时候最适合逛好东西啦！要不要松仔给你推荐点新奇有趣的小玩意儿？"
 
-        return f"诶？没太看懂～不过豆仔更擅长帮你挑商品！想买什么呀？直接说就行～"
+        return f"诶？没太看懂～不过松仔更擅长帮你挑商品！想买什么呀？直接说就行～"
 
 
 class MockEmbedding:

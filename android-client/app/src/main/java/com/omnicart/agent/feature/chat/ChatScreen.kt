@@ -63,7 +63,7 @@ fun ChatScreen(
             viewModel.setSessionId(sessionId)
         }
     }
-    // 问问豆仔：自动发送聚焦分析
+    // 问问松仔：自动发送聚焦分析
     LaunchedEffect(askDouzaiProductId) {
         if (askDouzaiProductId.isNotBlank()) {
             viewModel.sendAskDouzai(askDouzaiProductId, askDouzaiTitle)
@@ -201,7 +201,7 @@ fun ChatScreen(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "豆仔 AI 导购",
+                            "松仔 AI 导购",
                             style = MaterialTheme.typography.titleMedium,
                             color = OnPrimary,
                             fontWeight = FontWeight.Bold,
@@ -340,7 +340,7 @@ fun ChatScreen(
                                             text = message.text,
                                             type = BubbleType.Assistant,
                                         )
-                                        // 问问豆仔对比卡片 (持久化在消息中)
+                                        // 问问松仔对比卡片 (持久化在消息中)
                                         if (message.hasComparison) {
                                             Spacer(modifier = Modifier.height(6.dp))
                                             ComparisonCardForMessage(message)
@@ -419,7 +419,7 @@ fun ChatScreen(
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        text = uiState.loadingMessage.ifBlank { "豆仔正在思考…" },
+                                        text = uiState.loadingMessage.ifBlank { "松仔正在思考…" },
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -544,7 +544,7 @@ fun ChatScreen(
                             }
                             Spacer(modifier = Modifier.height(18.dp))
                             Text(
-                                text = "豆仔",
+                                text = "松仔",
                                 style = MaterialTheme.typography.headlineMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
@@ -662,7 +662,7 @@ fun ConstraintChipsRow(
     }
 }
 
-// ---- P2-2: "问问豆仔" 对比分析卡片 ----
+// ---- P2-2: "问问松仔" 对比分析卡片 ----
 
 /** 目标商品分析区块 (共用) */
 @Composable

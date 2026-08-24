@@ -68,7 +68,7 @@ def build_history_text(chat_history: list[dict], max_turns: int = 30) -> str:
         if u:
             lines.append(f"[{i}] 用户：{u}")
         if a:
-            lines.append(f"[{i}] 豆仔：{a}")
+            lines.append(f"[{i}] 松仔：{a}")
     return "\n".join(lines)
 
 

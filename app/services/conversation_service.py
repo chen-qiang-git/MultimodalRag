@@ -278,7 +278,7 @@ class ConversationService:
         await self._persist_snapshot(conversation_id, snapshot)
 
     async def set_focus_product(self, conversation_id: str, product):
-        """锁定聚焦商品 (问豆仔功能)。"""
+        """锁定聚焦商品 (问松仔功能)。"""
         snapshot = await self.get_context_snapshot(conversation_id)
         snapshot["focus_product"] = {
             "product_id": product.product_id,

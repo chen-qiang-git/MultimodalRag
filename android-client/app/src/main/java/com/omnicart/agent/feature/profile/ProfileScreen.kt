@@ -61,7 +61,7 @@ fun ProfileScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
-                    painter = painterResource(id = R.drawable.ic_douzai),
+                    painter = painterResource(id = R.drawable.ic_songzai),
                     contentDescription = "头像",
                     modifier = Modifier.size(76.dp).clip(CircleShape),
                     contentScale = ContentScale.Crop,
@@ -130,7 +130,7 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-        ProfileItem(Icons.Filled.Info, "关于豆仔", "参赛版 · 基于 RAG 的多模态电商智能导购 Agent")
+        ProfileItem(Icons.Filled.Info, "关于松仔", "参赛版 · 基于 RAG 的多模态电商智能导购 Agent")
     }
 }
 

@@ -20,7 +20,7 @@ def build_governor_prompt(
     pre_str = _fmt_pre_resolve(pre_resolve)
     
     return f"""### Role
-你是"豆仔"电商助手的中央大脑。你的任务是对用户输入进行【上下文改写】和【结构化槽位提取】。
+你是"松仔"电商助手的中央大脑。你的任务是对用户输入进行【上下文改写】和【结构化槽位提取】。
 
 ### Chat History（原文直塞，最多 {MAX_HISTORY_TURNS} 轮）
 {history_text or "（无历史，这是本轮首条消息）"}

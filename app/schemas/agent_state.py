@@ -2,7 +2,7 @@
 """v2.0 State Schema — LangGraph 强类型共享状态 全局内存（黑板）。
 那么这份 AgentState 就是整个公司（LangGraph 工作流）所有部门（节点）共同传递的“公文包”。
 
-依据《豆仔 v2.0 重构方案》核心数据契约，并吸收已定案决策：
+依据《松仔 v2.0 重构方案》核心数据契约，并吸收已定案决策：
   D1  预算：LLM 只出 raw + modifier，min/max 由规则提取，BudgetGovernor 做确定性算术
   D3  检索通道：text / review / policy 三通道
   D5  推荐：固定 Top-3
