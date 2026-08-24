@@ -1,0 +1,209 @@
+"""V1 Response Guard — 回答守门检查。
+
+ResponseAgent 输出后执行，轻量规则不阻塞回答。
+标记硬失败（幻觉/编造），写入 harness_report 供前端展示。
+"""
+
+import re
+import logging
+from app.schemas.agent_state import AgentState
+
+_log = logging.getLogger(__name__)
+
+
+class ResponseGuard:
+    """回答守门器 — 轻量规则检查 + 标记。"""
+
+    # 品牌列表（幻觉检测用 — 对齐 ecommerce_agent_dataset 全部 65 个品牌）
+    _KNOWN_BRANDS = [
+        # 数码电子
+        "Apple", "苹果", "华为", "HUAWEI", "小米", "Samsung", "三星",
+        "Sony", "索尼", "Bose", "JBL", "Sennheiser", "AirPods",
+        "Anker", "安克", "Baseus", "倍思", "漫步者", "Edifier",
+        "QCY", "OPPO", "vivo", "联想", "Lenovo",
+        # 服饰运动
+        "Nike", "耐克", "Adidas", "阿迪达斯", "优衣库", "Uniqlo",
+        "李宁", "安踏", "特步", "迪卡侬", "Decathlon",
+        "The North Face", "北面", "始祖鸟", "Arc'teryx",
+        "露露乐蒙", "Lululemon", "萨洛蒙", "Salomon",
+        "HOKA", "Osprey", "迈乐", "Merrell",
+        # 美妆护肤
+        "雅诗兰黛", "兰蔻", "SK-II", "资生堂", "科颜氏", "巴黎欧莱雅", "理肤泉",
+        "玉兰油", "The Ordinary", "珀莱雅", "薇诺娜",
+        "AHC", "安热沙", "完美日记", "花西子", "方里", "芳珂", "珊珂",
+        # 食品饮料
+        "雀巢", "三顿半", "蒙牛", "伊利", "元气森林", "可口可乐",
+        "农夫山泉", "东方树叶", "康师傅", "统一", "红牛", "东鹏",
+        "三只松鼠", "良品铺子", "百草味", "日清", "海天", "李锦记",
+        "纯甄", "金典",
+    ]
+
+    def check(self, state: AgentState) -> dict:
+        answer = getattr(state, "answer", "") or state.final_response or ""
+        products = getattr(state, "retrieved_products", None) or state.ranked_items or []
+        context = getattr(state, "context_prompt", "") or ""
+        user_query = getattr(state, "user_query", "") or state.user_input or ""
+
+        report = {
+            "evidence_bound": self._check_evidence(answer, products),
+            "price_accurate": self._check_price(answer, products),
+            "risk_warned": self._check_risk(answer, state.decision_results or []),
+            "honest_on_empty": self._check_empty(answer, products),
+            "hallucination": self._check_hallucination(answer, products, context, user_query),
+            "warnings": [],
+        }
+
+        # 汇总
+        if not report["evidence_bound"]:
+            report["warnings"].append("回答未引用证据（评价/FAQ等）")
+        if not report["risk_warned"] and self._has_risks(state.decision_results or []):
+            report["warnings"].append("存在风险项但回答未提醒")
+        if not report["price_accurate"]:
+            report["warnings"].append("价格引用不准确")
+        if report["hallucination"]:
+            report["warnings"].append(f"幻觉风险: {report['hallucination']}")
+
+        has_warnings = len(report["warnings"]) > 0
+        is_chitchat = (getattr(state, "intent", "") or "") == "chitchat"
+        hard_fail = (
+            (not report["honest_on_empty"] and not is_chitchat)  # 无商品时编造推荐（闲聊除外）
+            or bool(report["hallucination"])  # 提到了不存在的品牌
+        )
+
+        state.harness_report = {
+            "schema_valid": True,
+            "evidence_bound": report["evidence_bound"],
+            "price_accurate": report["price_accurate"],
+            "risk_warned": report["risk_warned"],
+            "honest_on_empty": report["honest_on_empty"],
+            "guard_warnings": report["warnings"],
+            "passed": not hard_fail,
+            "failure_source": None if not hard_fail else "response_guard",
+        }
+
+        if hard_fail:
+            _log.warning(f"ResponseGuard FAILED: {report['warnings']}")
+
+        return report
+
+    # ---- 各项检查 ----
+
+    def _check_evidence(self, answer: str, products: list[dict]) -> bool:
+        """证据绑定：回答是否引用了具体商品信息（品牌名/标题关键词/证据内容）。"""
+        if not products:
+            return True
+        for p in products[:3]:
+            brand = p.get("brand", "")
+            title = p.get("title", "")
+            # 品牌名命中
+            if brand and len(brand) >= 2 and brand in answer:
+                return True
+            # 标题滑窗：中英文都支持
+            for window in [4, 3]:
+                for i in range(len(title) - window + 1):
+                    sub = title[i:i+window].strip()
+                    if len(sub) >= 2 and sub in answer:
+                        return True
+            # 英文品牌/型号关键词
+            eng_words = re.findall(r'[A-Za-z0-9][A-Za-z0-9\- ]{1,}[A-Za-z0-9]', title)
+            for w in eng_words[:3]:
+                if len(w) >= 3 and w.lower() in answer.lower():
+                    return True
+        return False
+
+    def _check_price(self, answer: str, products: list[dict]) -> bool:
+        """价格准确：如果提到了商品名，价格是否正确。"""
+        for p in products[:2]:
+            brand = p.get("brand", "")
+            title = p.get("title", "")
+            price = int(p.get("price", 0))
+            price_strs = [str(price), f"¥{price}", f"￥{price}", f"¥{price}.0", f"￥{price}.0",
+                         f"{price}元", f"{price}块"]
+            # 检查回答是否引用了该商品（品牌或标题关键词）
+            mentioned = (brand and len(brand) >= 2 and brand in answer)
+            if not mentioned:
+                # 标题滑窗：4字片段命中即认为引用了该商品
+                for i in range(len(title) - 3):
+                    if title[i:i+4] in answer:
+                        mentioned = True
+                        break
+            if mentioned and price > 0:
+                if not any(ps in answer for ps in price_strs):
+                    return False
+        return True
+
+    def _check_risk(self, answer: str, decisions: list[dict]) -> bool:
+        """风险覆盖：有风险标签时，回答是否提及。"""
+        all_risks = set()
+        for d in decisions[:3]:
+            for r in d.get("risk_factors", []):
+                r_str = str(r)
+                # 提取关键词（中英文）
+                keywords = re.findall(r'[一-鿿A-Za-z0-9]{2,4}', r_str)
+                all_risks.update(keywords)
+                # 也加入完整风险文本的前6字
+                if len(r_str) >= 2:
+                    all_risks.add(r_str[:6])
+        if not all_risks:
+            return True
+        return any(kw in answer for kw in all_risks if len(kw) >= 2)
+
+    def _check_empty(self, answer: str, products: list[dict]) -> bool:
+        """空结果诚实：无商品时不应推荐具体品牌/型号。"""
+        if products:
+            return True
+        misleading = ["推荐", "值得买", "建议入手", "可以考虑", "这款", "那个",
+                      "Anker", "Baseus", "倍思", "紫米", "绿联"]
+        return not any(kw in answer for kw in misleading)
+
+    def _check_hallucination(
+        self, answer: str, products: list[dict], context: str, user_query: str
+    ) -> str:
+        """幻觉检测：回答是否引用了不在检索结果中的品牌。
+
+        排除: 用户自己提到的品牌 / 否定/解释性语境中的品牌引用。
+        """
+        if not products:
+            return ""
+        from app.decision.rules import BRAND_ALIASES
+        product_brands = set(p.get("brand", "").lower() for p in products)
+        aliased = set(product_brands)
+        for b in product_brands:
+            alias = BRAND_ALIASES.get(b)
+            if alias:
+                aliased.add(alias)
+        # 复合品牌兜底：DB 品牌可能是 "Anker安克" / "Nike耐克" 这类中英拼接
+        for b in list(product_brands):
+            for kb in self._KNOWN_BRANDS:
+                kbl = kb.lower()
+                if kbl and (kbl in b or b in kbl):
+                    aliased.add(kbl)
+
+        NEGATION_WORDS = ["非", "不符合", "不是", "并非", "除外", "排除",
+                          "暂无", "没有该", "没有这个", "无此", "不属于"]
+
+        for brand in self._KNOWN_BRANDS:
+            if brand.lower() in answer.lower() and brand.lower() not in aliased:
+                # 用户自己提到过（含别名）→ 不算幻觉
+                user_mentioned = brand.lower() in user_query.lower()
+                if not user_mentioned:
+                    alias = BRAND_ALIASES.get(brand.lower(), "")
+                    user_mentioned = alias in user_query.lower()
+                if not user_mentioned:
+                    user_mentioned = brand.lower() in context.lower()
+                if not user_mentioned:
+                    alias = BRAND_ALIASES.get(brand.lower(), "")
+                    user_mentioned = alias in context.lower()
+                if user_mentioned:
+                    continue  # 用户提过的品牌，跳过
+                # 否定/解释性语境（如 "Nike长裤为下装，非T恤"）→ 也不算幻觉
+                idx = answer.lower().find(brand.lower())
+                if idx >= 0:
+                    ctx_win = answer[max(0, idx-10):idx+len(brand)+20]
+                    if any(nw in ctx_win for nw in NEGATION_WORDS):
+                        continue
+                return f"提到了非检索结果的品牌 '{brand}'"
+        return ""
+
+    def _has_risks(self, decisions: list[dict]) -> bool:
+        return any(d.get("risk_factors") for d in decisions)

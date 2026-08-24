@@ -1,0 +1,73 @@
+# ============================================================
+# OmniCart Agent 模型统一配置
+# 业务代码只通过"能力名"调用，不关心具体模型
+# 修改模型只需改此文件，不动业务代码
+# ============================================================
+
+# API 提供商 (实际值从 .env 读取，此处为默认值)
+provider:
+  qwen:
+    api_key: "${QWEN_API_KEY}"
+    base_url: "https://dashscope.aliyuncs.com/api/v1"
+
+# 能力 → 模型映射
+capabilities:
+
+  # ---- 文本生成类 ----
+  chat_generation:          # 多轮对话、推荐解释、最终回答
+    model: qwen-turbo
+    temperature: 0.7
+    max_tokens: 2048
+
+  intent_understanding:     # 购物意图、约束抽取 (turbo够用，比plus快3倍)
+    model: qwen-turbo
+    temperature: 0.3
+    max_tokens: 1024
+
+  # ---- 视觉理解类 ----
+  visual_understanding:     # 商品图/截图解析 (Qwen-VL-Max, 最强)
+    model: qwen-vl-max
+    temperature: 0.3
+    max_tokens: 2048
+
+  # ---- 向量化类 ----
+  text_embedding:           # 商品文本、评论、FAQ 向量化 (OpenAI 兼容 API)
+    model: text-embedding-v4
+    dimensions: 1024
+
+  vision_embedding:         # 商品图片向量化 (V1-Plus 启用)
+    model: qwen3-vl-embedding
+    dimensions: 1024
+    fallback: text_embedding
+
+  # ---- 上下文压缩 ----
+  context_compression:      # 对话历史增量摘要 (小模型，低延迟，异步)
+    model: qwen-turbo
+    temperature: 0.3
+    max_tokens: 256
+
+  # ---- 精排类 ----
+  text_reranking:           # 候选商品文本精排 (兼容 API)
+    model: qwen3-rerank
+
+  vision_reranking:         # 图文精排 (V1-Plus 启用)
+    model: qwen3-vl-rerank
+    fallback: text_reranking
+
+# 全局开关
+mock_mode: ${OMNICART_MOCK_MODE}
+
+# ============================================================
+# 单价表（元 / 百万 tokens）— 阿里云 DashScope 公开参考价
+# 用途：model_gateway 每次调用按真实 usage 估算成本，写入 trace.metadata.cost_cny
+# 注意：以下为参考价，正式上线前请按阿里云控制台实际计费标准校准
+# embedding / reranker 只有 total_tokens，按 input 价计
+# ============================================================
+pricing:
+  qwen-turbo:            { input: 0.3,  output: 0.6 }     # 轻量对话/意图/压缩
+  qwen-plus:             { input: 0.8,  output: 2.0 }     # 备用主力对话
+  qwen-max:              { input: 2.4,  output: 9.6 }     # 高质量场景
+  qwen-vl-plus:          { input: 0.8,  output: 2.0 }     # 视觉理解
+  qwen-vl-max:           { input: 20.0, output: 20.0 }    # 旗舰视觉
+  text-embedding-v4:     { input: 0.7,  output: 0.0 }     # 文本向量化（按 total）
+  qwen3-rerank:          { input: 0.5,  output: 0.0 }     # 精排（按 total）

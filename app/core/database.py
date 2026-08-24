@@ -1,0 +1,104 @@
+"""Async SQLAlchemy 2.0 engine + session factory for PostgreSQL."""
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.core.config import DATABASE_URL, USE_POSTGRES
+
+_engine = None
+_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def _create_engine():
+    global _engine, _session_factory
+    if not USE_POSTGRES or not DATABASE_URL:
+        return
+    _engine = create_async_engine(
+        DATABASE_URL, echo=False,
+        pool_size=5, max_overflow=10,
+        pool_pre_ping=True,   # 复用前探活, 避免"connection is closed"偶发 500
+        pool_recycle=300,     # 5 分钟回收, 防服务端超时断连
+    )
+    _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
+
+
+async def get_session() -> AsyncSession:
+    """异步上下文管理器，获取一个 DB 会话。"""
+    if _session_factory is None:
+        _create_engine()
+    if _session_factory is None:
+        raise RuntimeError("PostgreSQL is not configured (DATABASE_URL is empty)")
+    async with _session_factory() as session:
+        yield session
+
+
+def get_session_sync():
+    """同步获取会话工厂（供 sync 包装器使用）。"""
+    if _session_factory is None:
+        _create_engine()
+    return _session_factory
+
+
+async def init_db():
+    """应用启动时建表（若无 Alembic 可先用 create_all）。"""
+    if not USE_POSTGRES:
+        return
+    from app.models import Base
+    if _engine is None:
+        _create_engine()
+    try:
+        async with _engine.begin() as conn:
+            # pgvector 扩展必须先于向量表创建
+            from app.core.config import USE_PG_VECTOR
+            if USE_PG_VECTOR:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception:
+        pass  # 表已存在则忽略，避免启动崩溃
+
+
+async def init_pg_vector():
+    """确保 pgvector 扩展与向量表存在（幂等）。"""
+    if not USE_POSTGRES:
+        return
+    from app.models import Base
+    from app.core.config import USE_PG_VECTOR
+    if not USE_PG_VECTOR:
+        return
+    if _engine is None:
+        _create_engine()
+    async with _engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def close_db():
+    """应用关闭时释放连接池。"""
+    if _engine:
+        await _engine.dispose()
+
+
+# ---- Async-to-Sync Bridge (供 PG 仓库在同步接口中桥接异步查询) ----
+
+import asyncio
+
+_nest_patched = False
+
+
+def run_async(coro):
+    """在同步上下文中运行异步协程，自动处理事件循环桥接。
+
+    所有 PG 仓库的同步接口统一使用此函数，避免 5 处重复的 _run() 样板代码。
+    """
+    global _nest_patched
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    if not _nest_patched:
+        import nest_asyncio
+        nest_asyncio.apply(loop)
+        _nest_patched = True
+
+    return loop.run_until_complete(coro)

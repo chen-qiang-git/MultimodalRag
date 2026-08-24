@@ -1,0 +1,305 @@
+"""共享约束解析规则 — 品类关键词、预算提取、场景检测、品牌别名。
+
+供 recommend.py (V0) 和 router_agent.py (V2) 共同引用，
+避免两处独立维护导致规则漂移。
+"""
+
+import re
+
+# ============================================================
+# 品牌中英文别名 — 用户说 "不要Nike" 要能匹配 DB 里的 "耐克"
+# ============================================================
+
+BRAND_ALIASES: dict[str, str] = {
+    # 数码电子
+    "apple": "苹果", "苹果": "apple",
+    "huawei": "华为", "华为": "huawei",
+    "samsung": "三星", "三星": "samsung",
+    "sony": "索尼", "索尼": "sony",
+    "edifier": "漫步者", "漫步者": "edifier",
+    "anker": "安克", "安克": "anker",
+    "oppo": "oppo",  # 无别名，占位防误判
+    "vivo": "vivo",
+    "qcy": "qcy",
+    "lenovo": "联想", "联想": "lenovo",
+    # 服饰运动
+    "nike": "耐克", "耐克": "nike",
+    "adidas": "阿迪达斯", "阿迪达斯": "adidas",
+    "uniqlo": "优衣库", "优衣库": "uniqlo",
+    "thenorthface": "北面", "北面": "thenorthface",
+    "lululemon": "露露乐蒙", "露露乐蒙": "lululemon",
+    "arcteryx": "始祖鸟", "始祖鸟": "arcteryx",
+    "anta": "安踏", "安踏": "anta",
+    "lining": "李宁", "李宁": "lining",
+    "xtep": "特步", "特步": "xtep",
+    "salomon": "萨洛蒙", "萨洛蒙": "salomon",
+    "hoka": "hoka",
+    "osprey": "osprey",
+    "merrell": "迈乐", "迈乐": "merrell",
+    "decathlon": "迪卡侬", "迪卡侬": "decathlon",
+    # 美妆护肤
+    "sk-ii": "skii", "skii": "sk-ii", "sk2": "sk-ii",
+    "esteelauder": "雅诗兰黛", "雅诗兰黛": "esteelauder",
+    "lancome": "兰蔻", "兰蔻": "lancome",
+    "shiseido": "资生堂", "资生堂": "shiseido",
+    "kiehls": "科颜氏", "科颜氏": "kiehls",
+    "loreal": "巴黎欧莱雅", "巴黎欧莱雅": "loreal",
+    "larocheposay": "理肤泉", "理肤泉": "larocheposay",
+    "olay": "玉兰油", "玉兰油": "olay",
+    "theordinary": "theordinary",
+    "ahc": "ahc",
+    "perfectdiary": "完美日记", "完美日记": "perfectdiary",
+    "florasis": "花西子", "花西子": "florasis",
+    "anessa": "安热沙", "安热沙": "anessa",
+    "fancl": "芳珂", "芳珂": "fancl",
+    "winona": "薇诺娜", "薇诺娜": "winona",
+    "proya": "珀莱雅", "珀莱雅": "proya",
+    # 食品饮料
+    "nestle": "雀巢", "雀巢": "nestle",
+    "cocacola": "可口可乐", "可口可乐": "cocacola",
+    "nongfuspring": "农夫山泉", "农夫山泉": "nongfuspring",
+    "yili": "伊利", "伊利": "yili",
+    "mengniu": "蒙牛", "蒙牛": "mengniu",
+    "saturnbird": "三顿半", "三顿半": "saturnbird",
+    "genkiforest": "元气森林", "元气森林": "genkiforest",
+    "masterkong": "康师傅", "康师傅": "masterkong",
+    "uni-president": "统一", "统一": "uni-president",
+    "easternleaf": "东方树叶", "东方树叶": "easternleaf",
+    "redbull": "红牛", "红牛": "redbull",
+    "dongpeng": "东鹏", "东鹏": "dongpeng",
+    "nissin": "日清", "日清": "nissin",
+    "haïtian": "海天", "海天": "haïtian",
+    "leekumkee": "李锦记", "李锦记": "leekumkee",
+    "squirrel": "三只松鼠", "三只松鼠": "squirrel",
+    "bestore": "良品铺子", "良品铺子": "bestore",
+    "beandchef": "百草味", "百草味": "beandchef",
+    "purezen": "纯甄", "纯甄": "purezen",
+    "saty": "金典", "金典": "saty",
+}
+
+
+def expand_brand_aliases(tags: list[str]) -> list[str]:
+    """将排除标签中的品牌名展开为双语版本，确保中英文都能匹配。"""
+    expanded = list(tags)
+    for tag in tags:
+        alias = BRAND_ALIASES.get(tag.lower())
+        if alias and alias not in expanded:
+            expanded.append(alias)
+    return expanded
+
+# ============================================================
+# 品类 → 关键词映射（以 router_agent 版本为 canonical）
+# ============================================================
+
+CATEGORY_RULES: list[tuple[str, list[str]]] = [
+    ("数码电子", [
+        "数码", "电子产品", "电子", "数码产品",
+        "手机", "iphone", "安卓", "华为", "小米", "苹果", "oppo", "vivo", "荣耀",
+        "耳机", "蓝牙耳机", "降噪耳机", "有线耳机", "airpods", "音箱", "智能音箱",
+        "充电宝", "移动电源", "充电器", "快充", "数据线", "充电头",
+        "笔记本", "笔记本电脑", "游戏本", "轻薄本", "台式机", "电脑", "主机", "一体机",
+        "平板", "平板电脑", "ipad", "手表", "智能手表", "手环", "运动手环", "iwatch",
+        "相机", "单反", "微单", "拍立得", "无人机", "云台", "三脚架", "镜头", "存储卡",
+        "充电", "充电器", "充电宝", "数据线", "快充", "无线充", "充电头", "移动电源",
+        "键盘", "鼠标", "机械键盘", "电竞鼠标", "显示器", "显卡", "cpu", "内存条", "硬盘", "ssd",
+        "游戏机", "switch", "ps5", "xbox", "掌机", "游戏手柄", "vr", "ar",
+        "投影仪", "打印机", "扫描仪", "复印机", "kindle", "电子书", "阅读器",
+        "扫地机器人", "吸尘器", "空气净化器", "加湿器", "除湿机", "智能门锁", "摄像头",
+    ]),
+    ("美妆护肤", [
+        "精华", "面霜", "防晒", "防晒霜", "防晒乳", "防晒喷雾", "隔离", "隔离霜",
+        "洁面", "洗面奶", "洁面乳", "卸妆", "卸妆油", "卸妆水", "卸妆膏",
+        "面膜", "贴片面膜", "睡眠面膜", "泥膜", "眼膜", "唇膜", "爽肤水", "乳液", "眼霜",
+        "粉底", "粉底液", "气垫", "bb霜", "cc霜", "遮瑕", "遮瑕膏", "散粉", "定妆粉", "粉饼",
+        "口红", "唇釉", "唇泥", "唇线笔", "眼影", "眼线", "睫毛膏", "假睫毛", "眉笔", "眉粉",
+        "腮红", "高光", "修容", "妆前乳", "定妆喷雾", "化妆刷", "美妆蛋", "粉扑", "睫毛夹",
+        "护肤", "美妆", "彩妆", "香水", "香氛", "身体乳", "护手霜", "润唇膏", "磨砂膏", "去角质",
+        "洗发水", "护发素", "发膜", "精油", "染发剂", "烫发剂", "发胶", "发蜡", "发泥",
+        "化妆棉", "棉签", "眉刀", "美甲", "指甲油", "甲油胶", "医美", "护肤品", "化妆品",
+    ]),
+    ("服饰运动", [
+        "衣服", "服装", "穿搭", "穿的", "衣物", "服饰", "运动",
+        "t恤", "短袖", "长袖", "衬衫", "卫衣", "毛衣", "针织衫", "外套", "夹克", "风衣",
+        "羽绒", "羽绒服", "棉服", "大衣", "马甲", "背心", "吊带", "连衣裙", "半身裙", "短裙",
+        "裤子", "牛仔裤", "休闲裤", "运动裤", "阔腿裤", "紧身裤", "打底裤", "短裤", "卫裤",
+        "鞋", "运动鞋", "跑鞋", "篮球鞋", "足球鞋", "板鞋", "帆布鞋", "皮鞋", "马丁靴", "雪地靴",
+        "凉鞋", "拖鞋", "人字拖", "长靴", "短靴", "老爹鞋", "休闲鞋", "徒步鞋", "登山鞋",
+        "袜子", "船袜", "长袜", "短袜", "丝袜", "内裤", "内衣", "文胸", "睡衣", "家居服", "泳衣",
+        "帽子", "棒球帽", "鸭舌帽", "渔夫帽", "贝雷帽", "围巾", "手套", "腰带", "皮带", "领带",
+        "背包", "双肩包", "单肩包", "斜挎包", "手提包", "腰包", "钱包", "行李箱", "拉杆箱",
+        "瑜伽", "健身", "跑步", "登山", "户外", "徒步", "露营", "滑雪", "游泳", "骑行",
+        "瑜伽垫", "哑铃", "杠铃", "跑步机", "动感单车", "健身器材", "速干衣", "运动服",
+        "护腕", "护膝", "头盔", "帐篷", "睡袋", "登山杖", "冲锋衣", "抓绒衣", "羽毛球拍", "篮球", "足球",
+    ]),
+    ("食品饮料", [
+        "咖啡", "速溶咖啡", "挂耳咖啡", "咖啡豆", "拿铁", "美式", "奶茶", "果茶",
+        "零食", "饼干", "薯片", "膨化食品", "糖果", "巧克力", "坚果", "果干", "蜜饯",
+        "肉干", "肉松", "辣条", "方便面", "泡面", "螺蛳粉", "米线", "米粉", "面条",
+        "面包", "蛋糕", "糕点", "甜品", "果冻", "布丁", "酸奶", "奶酪", "芝士", "黄油",
+        "饮料", "碳酸饮料", "果汁", "气泡水", "矿泉水", "苏打水", "功能饮料", "运动饮料",
+        "牛奶", "羊奶", "奶粉", "豆浆", "豆奶", "鸡蛋", "生鲜", "水果", "蔬菜", "肉类", "海鲜",
+        "茶", "绿茶", "红茶", "乌龙茶", "普洱茶", "花茶", "白茶", "黑茶", "茶叶",
+        "保健", "保健品", "维生素", "钙片", "鱼油", "益生菌", "蛋白粉", "代餐",
+        "大米", "面粉", "杂粮", "燕麦", "麦片", "食用油", "酱油", "醋", "盐", "调料",
+        "火锅底料", "预制菜", "半成品", "冷冻食品", "速冻食品", "啤酒", "白酒", "红酒", "葡萄酒",
+        "食品", "食物", "吃的", "喝的", "吃", "喝", "早餐", "午餐", "晚餐", "宵夜", "便当",
+    ]),
+]
+
+
+def detect_category(query: str) -> str | None:
+    """从查询文本中检测商品品类。"""
+    q = query.lower()
+    for cat, kws in CATEGORY_RULES:
+        if any(k in q for k in kws):
+            return cat
+    return None
+
+
+# 子品类关键词 → DB 中子品类名（精确匹配 filter_by 用）
+SUBCATEGORY_KW_MAP: dict[str, str] = {
+    # 数码电子
+    "蓝牙耳机": "真无线耳机", "无线耳机": "真无线耳机", "降噪耳机": "真无线耳机",
+    "airpods": "真无线耳机", "tws": "真无线耳机", "耳机": "真无线耳机",
+    "手机": "智能手机", "iphone": "智能手机", "5g手机": "智能手机",
+    "平板": "平板电脑", "ipad": "平板电脑", "平板电脑": "平板电脑",
+    "笔记本": "笔记本电脑", "游戏本": "笔记本电脑", "轻薄本": "笔记本电脑",
+    "充电宝": "移动电源", "移动电源": "移动电源", "充电": "移动电源",
+    # 美妆护肤
+    "精华": "精华", "乳液": "乳液", "面霜": "面霜", "眼霜": "眼霜",
+    "防晒": "防晒", "粉底": "粉底液", "粉底液": "粉底液",
+    "卸妆": "卸妆", "面膜": "面膜", "爽肤": "爽肤水", "爽肤水": "爽肤水",
+    "口红": "口红", "唇膏": "口红", "眉笔": "眉笔",
+    # 服饰运动
+    "跑鞋": "跑步鞋", "跑步鞋": "跑步鞋", "运动鞋": "运动鞋",
+    "t恤": "运动T恤", "t 恤": "运动T恤", "短袖": "运动T恤",
+    "瑜伽": "瑜伽", "登山": "登山", "徒步": "徒步鞋",
+    # 食品饮料
+    "牛奶": "牛奶", "咖啡": "咖啡/速溶", "饮料": "碳酸饮料",
+    "零食": "零食/膨化", "坚果": "零食/膨化",
+}
+
+# 父级品类词 → 数据集真实子类集合（检索硬过滤用，防"鞋子"召回上衣）
+PARENT_SUB_MAP: dict[str, list[str]] = {
+    "鞋": ["跑步鞋", "篮球鞋", "徒步鞋"],
+    "上衣": ["短袖T恤", "速干T恤", "卫衣"],
+    "短袖": ["短袖T恤", "速干T恤"],
+    "裤": ["运动长裤", "运动短裤", "瑜伽裤", "户外裤"],
+    "包": ["背包"],
+    "帽": ["帽子"],
+    "耳机": ["真无线耳机"],
+    "充电": ["充电器/数据线", "移动电源"],
+    "护肤": ["精华", "面霜", "化妆水", "面膜", "防晒", "洁面", "眼霜", "卸妆"],
+    "彩妆": ["粉底液", "唇釉", "眉笔", "蜜粉"],
+    "咖啡": ["咖啡"],
+    "零食": ["坚果/零食"],
+    "饮料": ["咖啡", "牛奶", "酸奶", "碳酸饮料", "功能饮料", "茶饮"],
+}
+
+# 数据集规范子类词表 (懒加载自商品数据, 失败时回退映射表值)
+_canonical_sub_categories: set[str] | None = None
+
+
+def get_canonical_sub_categories() -> set[str]:
+    """返回数据集中真实存在的 sub_category 集合。
+
+    P0-B: 用于校验 LLM/规则给出的子类是否精确可过滤。
+    词表与数据集不同步(如"运动鞋"不在数据集中)时, 调用方应转 spec_keyword。
+    """
+    global _canonical_sub_categories
+    if _canonical_sub_categories is not None:
+        return _canonical_sub_categories
+    try:
+        from app.repositories.json_product_repo import JsonProductRepository
+        _canonical_sub_categories = {
+            p.sub_category
+            for p in JsonProductRepository().list_all()
+            if getattr(p, "sub_category", None)
+        }
+    except Exception:
+        _canonical_sub_categories = set(SUBCATEGORY_KW_MAP.values())
+    return _canonical_sub_categories
+
+
+def detect_sub_category(query: str, category: str | None = None) -> str | None:
+    """从查询文本中检测子品类（用于精确 filter_by 过滤）。"""
+    q = query.lower()
+    for kw, sub_cat in SUBCATEGORY_KW_MAP.items():
+        if kw in q:
+            return sub_cat
+    return None
+
+
+# ============================================================
+# 预算提取
+# ============================================================
+
+def detect_budget(query: str) -> float | None:
+    """从查询文本中提取预算上限。"""
+    q = query.lower()
+    for pattern, extract in [
+        (r'(\d+)\s*元?\s*以\s*[内下]', lambda m: float(m.group(1))),
+        (r'(\d+)\s*[元块]', lambda m: float(m.group(1))),
+        (r'¥\s*(\d+)', lambda m: float(m.group(1))),
+    ]:
+        match = re.search(pattern, q)
+        if match:
+            return extract(match)
+    return None
+
+
+# ============================================================
+# 场景检测
+# ============================================================
+
+SCENARIO_MAP: dict[str, str] = {
+    "出差": "business_trip", "商务": "business_trip", "高铁": "business_trip",
+    "旅行": "travel", "旅游": "travel", "三亚": "travel", "海边": "travel",
+    "沙滩": "travel", "度假": "travel", "游玩": "travel", "冲浪": "travel",
+    "飞机": "flight", "坐飞机": "flight", "登机": "flight",
+    "户外": "outdoor", "露营": "outdoor", "野餐": "outdoor",
+    "爬山": "outdoor", "登山": "outdoor", "徒步": "outdoor",
+    "通勤": "commute", "上班": "commute",
+    "办公": "desk", "学习": "desk", "上学": "desk", "考试": "desk", "写作业": "desk",
+    "游戏": "gaming", "电竞": "gaming", "打游戏": "gaming",
+    "运动": "sport", "跑步": "running", "晨跑": "running", "夜跑": "running",
+    "健身": "fitness", "健身房": "fitness",
+    "音乐": "music", "听歌": "music",
+    "送礼": "gift", "礼物": "gift", "送女友": "gift", "送男朋友": "gift", "生日": "gift",
+    "秋冬": "skincare", "干燥": "skincare", "敏感肌": "skincare", "换季": "skincare", "保湿": "skincare",
+}
+
+
+def detect_scenario(query: str) -> str | None:
+    """从查询文本中检测使用场景。"""
+    for cn, en in SCENARIO_MAP.items():
+        if cn in query:
+            return en
+    return None
+
+
+# ============================================================
+# 上传文件魔数校验
+# ============================================================
+
+_MAGIC_BYTES: dict[str, bytes] = {
+    "image/png": b"\x89PNG\r\n\x1a\n",
+    "image/jpeg": b"\xff\xd8\xff",
+    "image/webp": b"RIFF",
+    "image/gif": b"GIF8",
+}
+
+
+def validate_image_magic(content: bytes) -> str | None:
+    """校验文件头魔数，返回检测到的 MIME 类型。失败返回 None。"""
+    if not content:
+        return None
+    for mime, magic in _MAGIC_BYTES.items():
+        if content[:len(magic)] == magic:
+            # WebP 额外检查：offset 8-11 必须是 "WEBP"
+            if mime == "image/webp" and len(content) >= 12:
+                if content[8:12] == b"WEBP":
+                    return mime
+                continue
+            return mime
+    return None
