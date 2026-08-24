@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+val localBaseUrl = (localProperties.getProperty("BASE_URL") ?: "http://10.0.2.2:8006/")
+    .trimEnd('/') + "/"
 
 android {
     namespace = "com.omnicart.agent"
@@ -15,10 +26,6 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
-
-    val localBaseUrl = providers.gradleProperty("BASE_URL")
-        .orElse("http://10.0.2.2:8006/")
-        .get()
 
     buildTypes {
         debug {

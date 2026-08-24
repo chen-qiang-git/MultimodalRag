@@ -58,6 +58,8 @@ python scripts/smoke_graph.py
 
 Rewrite-RAG 运行在 Windows 宿主机；PostgreSQL、pgvector 与 Redis 保持在现有 Docker 容器中。无需为 Rewrite-RAG 再建立容器。
 
+联调前提：Docker 中的 PostgreSQL 与 Redis 必须已启动并向 Windows 发布端口；本地 Python 环境需按 `requirements.txt` 安装依赖；关闭 Mock 模式时 `.env` 必须配置有效的 Qwen 密钥。Android 工程需 JDK 17、Android SDK，以及模拟器或与 Windows 同一局域网的真机。
+
 1. 将 `.env.example` 复制为本地 `.env`，填入 Qwen 密钥，以及 Docker 已发布到 Windows 的 PostgreSQL / Redis 端口。
 2. 确保 `.env` 中 `OMNICART_HOST=0.0.0.0`、`OMNICART_PORT=8006`。这让模拟器和同一局域网内的真机可以访问宿主机服务。
 3. 将 `android-client/local.properties.example` 复制为 `android-client/local.properties`，设置 Android SDK 路径和 `BASE_URL`。
