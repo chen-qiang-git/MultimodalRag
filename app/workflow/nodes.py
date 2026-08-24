@@ -596,23 +596,28 @@ def _template_answer(top: list[dict]) -> str:
     for i, p in enumerate(top, 1):
         price = p.get("price")
         price_str = f"¥{int(price)}" if price else "价格见详情"
-        lines.append(f"{i}. {p.get('title', '')}（{p.get('brand', '')}）{price_str}")
+        lines.append(
+            f"{i}. {p.get('title', '')}（{p.get('brand', '')}）{price_str}："
+            "适合你当前的选购需求，可作为重点对比对象。"
+        )
     lines.append("想了解哪款的更多细节，或者换个条件，随时告诉我～")
     return "\n".join(lines)
 
 
 def _cites_products(answer: str, top: list[dict]) -> bool:
-    for p in top[:2]:
-        brand = p.get("brand", "")
-        title = p.get("title", "")
-        if brand and len(brand) >= 2 and brand in answer:
-            return True
-        for window in (4, 3):
-            for i in range(len(title) - window + 1):
-                sub = title[i:i + window].strip()
-                if len(sub) >= 2 and sub in answer:
-                    return True
-    return False
+    if not answer or not top:
+        return False
+
+    for p in top:
+        title = str(p.get("title") or "").strip()
+        price = p.get("price")
+        if not title or title not in answer:
+            return False
+        if isinstance(price, (int, float)):
+            price_tokens = {f"¥{price:g}", f"{price:g}元"}
+            if not any(token in answer for token in price_tokens):
+                return False
+    return True
 
 
 def _low_stock_hint(top: list[dict], current_brand: str | None) -> str:

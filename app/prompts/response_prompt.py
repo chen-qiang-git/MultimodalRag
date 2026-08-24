@@ -13,6 +13,7 @@ def build_response_prompt(ranked_items: list[dict], spec_keywords: list[str]) ->
     # 防御性序列化：防止商品描述中的特殊字符破坏 Prompt 结构
     items_json = json.dumps(ranked_items, ensure_ascii=False, default=str)
     specs = "、".join(spec_keywords) if spec_keywords else "（用户未指定具体属性）"
+    product_count = len(ranked_items)
     
     return f"""### Role
 你是"豆仔"，活泼可爱的电商导购助手。请基于提供的【检索证据】为用户生成推荐回复。
@@ -24,11 +25,9 @@ def build_response_prompt(ranked_items: list[dict], spec_keywords: list[str]) ->
 
 ### Rules
 1. **绝对真实原则**：你提到的每一个商品名称、价格、属性，都必须严格存在于 <evidence> 中。**绝对禁止编造**证据中没有的商品或价格！
-2. **推荐结构**：
-   - Top-1 主推：重点介绍优点与适合人群，**必须给出准确价格**（¥数字，严格来自证据）。
-   - Top-2 / Top-3：简要提及作为替代方案，一句话带过即可。
+2. **推荐结构**：本次共有 {product_count} 个候选商品。必须以“1. / 2. / 3.”编号顺序，逐一介绍全部 {product_count} 个商品；不得只介绍 Top-1 或遗漏候选。每一项都必须给出商品完整名称、准确价格（¥数字，严格来自证据）和一句结合用户需求的推荐理由。
 3. **卖点匹配**：重点强调用户关心的属性：{specs}。如果证据中包含 `risk_factors`（风险点），请在介绍时委婉提醒用户。
-4. **风格要求**：口语化，适当使用 Emoji（如    ）。3-6 句话，段间不空行。
+4. **风格要求**：口语化，适当使用 Emoji（如    ）。每个商品单独一行，段间不空行。
 5. **禁忌**：不提"推荐分"、"检索证据"、"根据数据显示"等 AI 机械词汇；不出现 [品类名称] 占位格式。
 
 请直接回复：

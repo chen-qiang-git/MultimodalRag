@@ -82,11 +82,24 @@ def _products_payload(state: AgentState) -> list[dict]:
     items = []
     for product in state.ranked_items[:3]:
         product_id = product.get("product_id", "")
+        rag_knowledge = product.get("rag_knowledge")
+        if not isinstance(rag_knowledge, dict):
+            rag_knowledge = {}
+        description = (
+            product.get("description")
+            or product.get("marketing_description")
+            or rag_knowledge.get("marketing_description")
+            or ""
+        )
         items.append({
             "product_id": product_id,
             "title": product.get("title", ""),
             "brand": product.get("brand", ""),
+            "category": product.get("category", ""),
+            "sub_category": product.get("sub_category", ""),
             "price": product.get("price", 0),
+            "skus": product.get("skus") or [],
+            "description": description,
             "image_urls": [f"/api/products/{product_id}/image"] if product_id else [],
             "rank_score": product.get("rank_score"),
         })
