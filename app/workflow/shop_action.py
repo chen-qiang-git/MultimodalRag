@@ -108,7 +108,7 @@ def _view_cart(cart_repo, user_id: str, q: str) -> str:
     lines = [f"你的购物车有 {len(items)} 件商品："]
     for idx, i in enumerate(items, 1):
         mark = "✅" if i.selected else "☑️"
-        lines.append(f"{mark} {idx}. {i.title[:32]}（{i.brand}）¥{i.price:.0f} ×{i.quantity}")
+        lines.append(f"{mark} {idx}. {i.title}（{i.brand}）¥{i.price:.0f} ×{i.quantity}")
     total = sum(i.price * i.quantity for i in items if i.selected)
     lines.append(f"合计（已勾选）¥{total:.2f}～要结算、删除或改数量都可以告诉我～")
     return "\n".join(lines)
