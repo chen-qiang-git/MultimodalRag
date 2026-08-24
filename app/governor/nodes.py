@@ -7,6 +7,7 @@
 澄清（P3）不在此子图内：由主图路由到 clarification_node（写入 final_response 后直达 END）。
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -33,9 +34,13 @@ from app.model_gateway.gateway import get_model_gateway
 from app.prompts.clarification_prompt import build_clarification_prompt
 from app.prompts.governor_prompt import build_governor_prompt
 from app.repositories import get_product_repo
+from app.repositories.user_preference_repo import get_user_preference_repo
 from app.schemas.agent_state import AgentState, BudgetSchema, SlotSchema, UserProfileSchema
+from app.services.user_profile_service import UserProfileService
 
 logger = logging.getLogger(__name__)
+
+_pending_profile_tasks: set = set()
 
 _VALID_CATEGORIES = {"数码电子", "美妆护肤", "服饰运动", "食品饮料"}
 _SCENE_SPEC_KEYWORDS = {
@@ -63,6 +68,13 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
     """compile 节点：上下文直塞 → 预消解 → P1 编译 → 确定性治理。"""
     snapshot = dict(state.context_snapshot or {})
     user_query = state.user_input
+
+    # P11：加载用户长期画像（懒加载，供本轮回填避雷/偏好）
+    if state.user_id and state.user_profile is None:
+        try:
+            state.user_profile = await _load_user_profile(state.user_id)
+        except Exception as e:
+            logger.debug("profile load skipped: %s", e)
 
     # 硬重置 → 清空历史约束
     if preresolve.is_hard_reset(user_query):
@@ -191,6 +203,11 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
             slots.rule_resolved_product_id = last_products[0].get("product_id")
 
     # ---- 写入 State ----
+    # P11：长期避雷并入排除过滤（从画像加载/合并后生效）
+    if state.user_profile and state.user_profile.avoid_tags:
+        for tag in state.user_profile.avoid_tags:
+            if tag not in slots.exclusions:
+                slots.exclusions.append(tag)
     state.slots = slots
     state.intent = slots.intent
     state.rewritten_query = slots.rewritten_query or user_query
@@ -204,10 +221,15 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
     elif slots.intent == "direct_answer" and slots.rule_resolved_product_id:
         state.candidate_ids = [slots.rule_resolved_product_id]
 
-    # D8：画像规则门（零 LLM 成本；异步旁路后续接入）
+    # D8/P11：画像规则门（零 LLM 成本）→ 立即合并规则抽取结果
     profile = maybe_extract_profile(user_query, len(state.chat_history))
     if profile:
         state.user_profile = _merge_profile(state.user_profile, profile)
+    # P11：长期信号 → 异步 LLM 抽取 + 落库（不阻塞主链路）
+    if state.user_id:
+        svc = UserProfileService()
+        if svc.has_long_term_signal(user_query) or len(state.chat_history) > 5:
+            _spawn_profile_task(_persist_profile_async(state.user_id, user_query))
 
     state.trace_steps.append({
         "step_id": f"T{len(state.trace_steps) + 1:03d}",
@@ -548,6 +570,44 @@ def _merge_profile(current, profile: dict):
             if x not in cur[k]:
                 cur[k].append(x)
     return UserProfileSchema(**cur)
+
+
+async def _load_user_profile(user_id: str) -> UserProfileSchema:
+    """从 user_preference_entries 聚合用户长期画像。"""
+    repo = get_user_preference_repo()
+    entries = await repo.alist_by_category(user_id)
+    profile = UserProfileSchema()
+    for e in entries:
+        for b in (e.brands or []):
+            if b not in profile.brands:
+                profile.brands.append(b)
+        for a in (e.avoid_tags or []):
+            if a not in profile.avoid_tags:
+                profile.avoid_tags.append(a)
+        for m in (e.must_tags or []):
+            if m not in profile.must_tags:
+                profile.must_tags.append(m)
+        for s in (e.scenarios or []):
+            if s not in profile.scenarios:
+                profile.scenarios.append(s)
+        if e.category and e.category not in profile.categories:
+            profile.categories.append(e.category)
+    return profile
+
+
+async def _persist_profile_async(user_id: str, raw_text: str) -> None:
+    """LLM 抽取偏好并落库（异步旁路，失败不影响主链路）。"""
+    try:
+        svc = UserProfileService()
+        await svc.parse_and_save(user_id, raw_text)
+    except Exception as e:
+        logger.debug("profile persist skipped: %s", e)
+
+
+def _spawn_profile_task(coro) -> None:
+    task = asyncio.create_task(coro)
+    _pending_profile_tasks.add(task)
+    task.add_done_callback(_pending_profile_tasks.discard)
 
 
 def _clarification_fallback(category: str, subs: list[str]) -> str:

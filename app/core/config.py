@@ -45,6 +45,9 @@ BUDGET_FUZZ_RATIO_MAX: float = float(_env("OMNICART_BUDGET_FUZZ_MAX", "1.2"))
 RERANK_VALUE_WEIGHT: float = float(_env("OMNICART_RERANK_VALUE_WEIGHT", "0.25"))
 RERANK_RELEVANCE_FLOOR: float = float(_env("OMNICART_RERANK_RELEVANCE_FLOOR", "0.50"))
 
+# ---- P5: Multi-Query 多路变体召回 ----
+ENABLE_MULTI_QUERY: bool = _env("OMNICART_ENABLE_MULTI_QUERY", "true").lower() == "true"
+
 # ---- D7: 上下文直塞阈值（直塞 ≤ MAX_HISTORY_TURNS，超过走 P10 兜底）----
 MAX_HISTORY_TURNS: int = int(_env("OMNICART_MAX_HISTORY_TURNS", "30"))
 MAX_HISTORY_TOKENS: int = int(_env("OMNICART_MAX_HISTORY_TOKENS", "30000"))
@@ -58,7 +61,7 @@ FAST_MODE: bool = _env("OMNICART_FAST_MODE", "false").lower() == "true"
 
 # ---- Decision Agent: RAG证据评分 ----
 ENABLE_DECISION_LLM: bool = _env("OMNICART_ENABLE_DECISION_LLM", "false").lower() == "true"
-DECISION_LLM_TIMEOUT: float = float(_env("OMNICART_DECISION_LLM_TIMEOUT", "3.0"))
+DECISION_LLM_TIMEOUT: float = float(_env("OMNICART_DECISION_LLM_TIMEOUT", "15.0"))
 ENABLE_EVIDENCE_SCORING: bool = _env("OMNICART_ENABLE_EVIDENCE_SCORING", "true").lower() == "true"
 SCORE_VERSION: str = _env("OMNICART_SCORE_VERSION", "evidence_scoring_v1")
 

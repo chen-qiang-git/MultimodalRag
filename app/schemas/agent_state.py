@@ -111,6 +111,8 @@ class AgentState(BaseModel):
     brand_unavailable: Dict[str, Any] = Field(default_factory=dict)  # 品牌不可得（不在库/该品类无货）
     decision_score: float = 0.0
     decision_results: List[Dict[str, Any]] = Field(default_factory=list)  # D5: Top-3
+    llm_overall_analysis: str = ""          # P6: LLM 证据评估整体分析
+    llm_user_warnings: List[str] = Field(default_factory=list)  # P6: 需要提醒用户的事项
 
     # ---- 追问（短路）----
     needs_clarification: bool = False

@@ -4,13 +4,14 @@
 import asyncio
 import logging
 
-from app.core.config import DEFAULT_TOP_K
+from app.core.config import DEFAULT_TOP_K, ENABLE_MULTI_QUERY
 from app.decision.rules import BRAND_ALIASES, PARENT_SUB_MAP
 from app.decision.scoring import DecisionScoring
 from app.model_gateway.gateway import get_model_gateway
 from app.prompts.response_prompt import CHITCHAT_PROMPT, build_response_prompt
 from app.repositories import get_product_repo
 from app.rerank.blender import blend_rank_score
+from app.retrieval.llm_evaluator import LlmEvaluator
 from app.retrieval.text_retriever import TextRetriever
 from app.schemas.agent_state import AgentState, BudgetSchema
 from app.schemas.product import Product
@@ -22,6 +23,7 @@ _repo = get_product_repo()
 _text = TextRetriever(_repo)
 _gateway = get_model_gateway()
 _scorer = DecisionScoring()
+_llm_evaluator = LlmEvaluator()
 _guard = ResponseGuard()
 
 _CHUNK_TO_SOURCE = {
@@ -50,15 +52,23 @@ async def retrieval_node(state: AgentState) -> AgentState:
     budget = slots.budget or BudgetSchema()
     query = state.rewritten_query or state.user_input
 
-    results = await _text.search_chunked(
-        query,
-        top_k=DEFAULT_TOP_K,
-        category=slots.category,
-        sub_category=slots.sub_category,
-        price_max=budget.max,
-        price_min=budget.min,
-        candidate_ids=state.candidate_ids or None,
-    )
+    # P5: Multi-Query 多路变体召回（sub/brand/spec/must_tags 组合），默认开启
+    if ENABLE_MULTI_QUERY:
+        variants = _build_query_variants(state, query)
+    else:
+        variants = [query]
+    if len(variants) > 1:
+        results = await _multi_search(variants, state)
+    else:
+        results = await _text.search_chunked(
+            query,
+            top_k=DEFAULT_TOP_K,
+            category=slots.category,
+            sub_category=slots.sub_category,
+            price_max=budget.max,
+            price_min=budget.min,
+            candidate_ids=state.candidate_ids or None,
+        )
 
     # 排除硬过滤（"不要耐克" / "除了X"）
     exclusions = slots.exclusions or []
@@ -129,6 +139,59 @@ async def retrieval_node(state: AgentState) -> AgentState:
         "status": "success" if results else "empty",
     })
     return state
+
+
+def _build_query_variants(state: AgentState, base: str) -> list[str]:
+    """P5：基于槽位构造检索变体（原句 + 槽位补全），增强泛查询召回。"""
+    slots = state.slots
+    parts: list[str] = []
+    if slots.sub_category and slots.sub_category not in base:
+        parts.append(slots.sub_category)
+    if slots.brand and slots.brand.lower() not in base.lower():
+        parts.append(slots.brand)
+    for kw in (slots.spec_keywords or [])[:3]:
+        if kw and kw not in base:
+            parts.append(kw)
+    for tag in (slots.must_tags or [])[:3]:
+        if tag and tag not in base:
+            parts.append(tag)
+    variants = [base]
+    if parts:
+        variants.append(f"{base} {' '.join(parts)}")
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in variants:
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out[:3]
+
+
+async def _multi_search(variants: list[str], state: AgentState) -> list[dict]:
+    """P5：多路召回后按 product_id 合并，保留最高分。"""
+    slots = state.slots
+    budget = slots.budget or BudgetSchema()
+    merged: dict[str, dict] = {}
+    for v in variants:
+        hits = await _text.search_chunked(
+            v,
+            top_k=DEFAULT_TOP_K,
+            category=slots.category,
+            sub_category=slots.sub_category,
+            price_max=budget.max,
+            price_min=budget.min,
+            candidate_ids=state.candidate_ids or None,
+        )
+        for p in hits:
+            pid = p.get("product_id")
+            if not pid:
+                continue
+            score = float(p.get("score") or 0.0)
+            cur = merged.get(pid)
+            if cur is None or score > float(cur.get("score") or 0.0):
+                merged[pid] = p
+    ranked = sorted(merged.values(), key=lambda p: float(p.get("score") or 0.0), reverse=True)
+    return ranked[:DEFAULT_TOP_K]
 
 
 def _brand_variants(brand: str) -> set[str]:
@@ -367,11 +430,38 @@ async def decision_node(state: AgentState) -> AgentState:
     preferred = (state.user_profile.brands if state.user_profile else None) or []
     results = []
 
+    # P6: LLM 证据评估（精排后二次校验，默认关闭，动态读取配置便于运行时开关）
+    llm_eval = {"evaluations": [], "overall_analysis": "", "user_warnings": []}
+    from app.core.config import DECISION_LLM_TIMEOUT, ENABLE_DECISION_LLM
+    if ENABLE_DECISION_LLM and items:
+        try:
+            llm_eval = await asyncio.wait_for(
+                _llm_evaluator.evaluate(
+                    query=query,
+                    constraints={
+                        "category": slots.category,
+                        "sub_category": slots.sub_category,
+                        "budget_max": slots.budget.max,
+                        "budget_min": slots.budget.min,
+                        "scenario": slots.scene,
+                    },
+                    candidates=items,
+                    top_n=5,
+                ),
+                timeout=DECISION_LLM_TIMEOUT,
+            )
+        except Exception as e:
+            logger.debug("LLM evaluator skipped: %s", e)
+    eval_map = {ev.get("product_id", ""): ev for ev in llm_eval.get("evaluations", [])}
+    state.llm_overall_analysis = llm_eval.get("overall_analysis", "")
+    state.llm_user_warnings = llm_eval.get("user_warnings", [])
+
     for item in items:
         product = _to_product(item)
         if product is None:
             continue
         rel = float(item.get("rank_score") or item.get("score") or 0.0)
+        ev = eval_map.get(item.get("product_id", ""), {})
         decision = _scorer.score_with_evidence(
             product=product,
             query=query,
@@ -382,6 +472,11 @@ async def decision_node(state: AgentState) -> AgentState:
             preferred_brands=preferred,
             force_rag_relevance=rel,
             relevance_source="rerank_blend",
+            llm_relevance=ev.get("relevance", 0.0),
+            llm_reasoning=ev.get("reasoning", ""),
+            llm_verdict=ev.get("verdict", ""),
+            llm_strengths=ev.get("strengths", []),
+            llm_risks=ev.get("risks", []),
             evidence_metrics=None,
             global_evidence_sufficient=state.evidence_sufficiency,
         )
