@@ -10,10 +10,16 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
+from app.api.agent_actions import router as agent_actions_router
+from app.api.cart import router as cart_router
+from app.api.checkout import router as checkout_router
 from app.api.stream import router as stream_router
 
 app = FastAPI(title="Rewrite-RAG Web 测试台")
 app.include_router(stream_router)
+app.include_router(cart_router)
+app.include_router(checkout_router)
+app.include_router(agent_actions_router)
 
 _STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 

@@ -8,6 +8,8 @@ class Base(DeclarativeBase):
 
 
 from app.models.product import ProductModel
+from app.models.cart_item import CartItemModel
+from app.models.order import OrderModel
 from app.models.conversation import ConversationModel, ConversationMessageModel
 from app.models.user_preference_entry import UserPreferenceEntry
 from app.models.product_embedding import ProductEmbeddingModel, ProductChunkEmbeddingModel
@@ -15,6 +17,8 @@ from app.models.product_embedding import ProductEmbeddingModel, ProductChunkEmbe
 __all__ = [
     "Base",
     "ProductModel",
+    "CartItemModel",
+    "OrderModel",
     "ConversationModel", "ConversationMessageModel",
     "UserPreferenceEntry",
     "ProductEmbeddingModel", "ProductChunkEmbeddingModel",
