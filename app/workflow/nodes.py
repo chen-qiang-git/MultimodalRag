@@ -570,6 +570,11 @@ def _direct_response(state: AgentState) -> str:
 
 async def stream_response(state: AgentState):
     """真实转发模型 token；结束后把完整回答写回 state。"""
+    # shop_action / direct_answer / clarification 已在工作流节点中生成确定性结果。
+    # 这些结果不能再进入推荐回复分支，否则会被“无检索商品”兜底文案覆盖。
+    if state.final_response:
+        yield state.final_response
+        return
     if state.intent == "chitchat" and not state.ranked_items:
         prompt = CHITCHAT_PROMPT.format(query=state.user_input)
         top: list[dict] = []
