@@ -65,15 +65,19 @@ async def shop_action_node(state: AgentState) -> AgentState:
         else:
             state.final_response = res.get("message") or "购物车还是空的，先加购再结算吧～"
     else:  # add
-        pid = _resolve_add_target(state)
-        if not pid:
+        product_ids = _resolve_add_targets(state)
+        if not product_ids:
             state.final_response = "你想把哪一款加入购物车呀？告诉松仔是第几个，或者直接说商品名～"
         else:
-            res = add_to_cart(user_id, pid)
-            if res["ok"]:
+            results = [add_to_cart(user_id, product_id) for product_id in product_ids]
+            added = [res for res in results if res.get("ok")]
+            if added:
+                added_text = "、".join(
+                    f"【{res['title']}】（¥{res['price']:.0f}）" for res in added
+                )
                 state.final_response = (
-                    f"搞定～已把【{res['title']}】（¥{res['price']:.0f}）加入购物车，"
-                    f"当前共 {res['cart_count']} 件。要结算的话跟我说'结算'哦！"
+                    f"搞定～已把{added_text}加入购物车，当前共 {added[-1]['cart_count']} 件。"
+                    "要结算的话跟我说“结算”哦！"
                 )
             else:
                 state.final_response = "抱歉，松仔没找到这款商品，换个说法试试～"
@@ -136,29 +140,33 @@ def _update_quantity(state, cart_repo, user_id: str, q: str) -> str:
     return f"已把【{target.title[:32]}】数量改成 {new_qty} 件～"
 
 
-def _resolve_add_target(state) -> str | None:
+def _resolve_add_targets(state) -> list[str]:
+    """定位一个或多个推荐商品；多项引用优先于 Governor 的单一槽位。"""
     slots = state.slots
-    pid = (
-        slots.resolved_product_id
-        or slots.rule_resolved_product_id
-        or (state.candidate_ids[0] if state.candidate_ids else None)
-    )
-    if not pid:
-        last_products = (state.context_snapshot or {}).get("last_products") or []
-        if last_products and isinstance(last_products[0], dict):
-            pid = last_products[0].get("product_id")
-    return pid
+    last_products = [
+        item for item in ((state.context_snapshot or {}).get("last_products") or [])
+        if isinstance(item, dict) and item.get("product_id")
+    ]
+    indices = preresolve.resolve_product_indices(state.user_input or "", len(last_products))
+    if indices:
+        return [last_products[index]["product_id"] for index in indices]
+
+    pid = slots.resolved_product_id or slots.rule_resolved_product_id
+    if pid:
+        return [pid]
+    if state.candidate_ids:
+        return [state.candidate_ids[0]]
+    # 只剩一款时可自然省略序号；多款时必须追问，不能默认为第一款。
+    return [last_products[0]["product_id"]] if len(last_products) == 1 else []
 
 
 def _resolve_cart_target(state, items, q: str):
     """定位购物车条目：序数 > 指代商品ID > 标题/品牌子串。"""
     if not items:
         return None
-    m = preresolve._ORDINAL_PATTERN.search(q)
-    if m:
-        idx = preresolve._CN_NUM.get(m.group(1))
-        if idx is not None and idx < len(items):
-            return items[idx]
+    indices = preresolve.resolve_product_indices(q, len(items))
+    if indices:
+        return items[indices[0]]
     pid = state.slots.resolved_product_id or state.slots.rule_resolved_product_id
     if pid:
         for i in items:

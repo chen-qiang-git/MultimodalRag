@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.schemas.agent_state import AgentState
 from app.schemas.cart import DEMO_USER_ID
+from app.repositories import get_product_repo
 from app.services.conversation_service import get_conversation_service
 from app.workflow.graph import run_agent
 from app.workflow.nodes import stream_response
@@ -81,7 +82,8 @@ def _chat_history(messages: list[dict]) -> list[dict[str, str]]:
 
 def _products_payload(state: AgentState) -> list[dict]:
     items = []
-    for product in state.ranked_items[:3]:
+    limit = 5 if state.travel_weather_status == "available" and state.travel_plan else 3
+    for product in state.ranked_items[:limit]:
         product_id = product.get("product_id", "")
         rag_knowledge = product.get("rag_knowledge")
         if not isinstance(rag_knowledge, dict):
@@ -109,8 +111,13 @@ def _products_payload(state: AgentState) -> list[dict]:
 
 def _snapshot_update(state: AgentState) -> dict:
     slots = state.slots
+    last_products = _products_payload(state)
+    # 购物动作本身没有检索候选，不能用空列表覆盖刚展示的推荐商品。
+    if state.intent == "shop_action" and not last_products:
+        previous = (state.context_snapshot or {}).get("last_products") or []
+        last_products = [item for item in previous if isinstance(item, dict)]
     return {
-        "last_products": _products_payload(state),
+        "last_products": last_products,
         "pending_question": state.clarification_question if state.needs_clarification else None,
         "constraints": {
             "category": slots.category,
@@ -135,6 +142,9 @@ def _recommendation_payload(state: AgentState) -> dict:
         "sufficiency_report": state.sufficiency_report,
         "scene_plan": state.scene_plan or None,
         "scene_task_queries": state.scene_task_queries or [],
+        "travel_weather_status": state.travel_weather_status,
+        "travel_weather": state.travel_weather or None,
+        "travel_plan": state.travel_plan or None,
         "constraints": _snapshot_update(state)["constraints"],
         "needs_clarification": state.needs_clarification,
         "clarification_question": state.clarification_question,
@@ -169,6 +179,9 @@ async def _run_compat_recommendation(
         content=user_query,
         image_url=image_url or "",
     )
+    context_snapshot = _restore_recommendation_snapshot(
+        context["context_snapshot"], context["recent_messages"]
+    )
     result = await run_agent(AgentState(
         user_input=user_query,
         user_id=resolved_user_id,
@@ -176,7 +189,7 @@ async def _run_compat_recommendation(
         conversation_id=resolved_conversation_id,
         image_url=image_url,
         chat_history=_chat_history(context["recent_messages"]),
-        context_snapshot=context["context_snapshot"],
+        context_snapshot=context_snapshot,
         defer_response=defer_response,
     ))
     if not defer_response:
@@ -185,6 +198,37 @@ async def _run_compat_recommendation(
             resolved_user_id, resolved_session_id,
         )
     return result, resolved_session_id, resolved_conversation_id
+
+
+def _restore_recommendation_snapshot(snapshot: dict, recent_messages: list[dict]) -> dict:
+    """兼容曾被旧购物动作清空的快照：从历史推荐消息的 product_refs 恢复商品列表。"""
+    restored = dict(snapshot or {})
+    if restored.get("last_products"):
+        return restored
+    product_ids: list[str] = []
+    for message in reversed(recent_messages):
+        refs = message.get("product_refs") or []
+        if refs:
+            product_ids = [str(product_id) for product_id in refs if product_id]
+            break
+    if not product_ids:
+        return restored
+    repo = get_product_repo()
+    products: list[dict] = []
+    for product_id in product_ids:
+        product = repo.get_by_id(product_id)
+        if product:
+            products.append({
+                "product_id": product.product_id,
+                "title": product.title,
+                "brand": product.brand,
+                "category": product.category,
+                "sub_category": product.sub_category,
+                "price": product.base_price,
+            })
+    if products:
+        restored["last_products"] = products
+    return restored
 
 
 async def _persist_recommendation(
@@ -256,6 +300,9 @@ async def recommend_guide(req: GuideRequest):
         "trace_steps": result.trace_steps,
         "scene_plan": result.scene_plan or None,
         "scene_task_queries": result.scene_task_queries or [],
+        "travel_weather_status": result.travel_weather_status,
+        "travel_weather": result.travel_weather or None,
+        "travel_plan": result.travel_plan or None,
     }
 
 

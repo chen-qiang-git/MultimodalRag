@@ -1,5 +1,7 @@
 import os
-from dotenv import load_dotenv
+from pathlib import Path
+
+from dotenv import dotenv_values, load_dotenv
 
 # 确保 .env 在读取配置前加载（无论是直接运行还是被导入）
 load_dotenv()
@@ -7,6 +9,18 @@ load_dotenv()
 
 def _env(key: str, default: str = "") -> str:
     return os.getenv(key, default)
+
+
+def _amap_key() -> str:
+    """优先部署变量；本地开发可复用 traStar 的高德 Web Key，不输出密钥。"""
+    direct_key = _env("AMAP_MAPS_API_KEY", "").strip()
+    if direct_key:
+        return direct_key
+    source = Path(_env("AMAP_KEY_SOURCE_FILE", r"D:\traStar\.env"))
+    if not source.is_file():
+        return ""
+    values = dotenv_values(source)
+    return str(values.get("VITE_AMAP_WEB_KEY") or values.get("AMAP_MAPS_API_KEY") or "").strip()
 
 
 # ---- 服务 ----
@@ -21,6 +35,16 @@ QWEN_BASE_URL: str = _env("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/api/v
 QWEN_COMPATIBLE_BASE_URL: str = _env(
     "QWEN_COMPATIBLE_BASE_URL",
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
+
+# ---- 高德天气（旅行天气导购）----
+AMAP_MAPS_API_KEY: str = _amap_key()
+AMAP_MCP_ENABLED: bool = _env("AMAP_MCP_ENABLED", "true").lower() == "true"
+AMAP_MCP_COMMAND: str = _env("AMAP_MCP_COMMAND", "uvx")
+AMAP_MCP_SERVER: str = _env("AMAP_MCP_SERVER", "amap-mcp-server")
+AMAP_WEATHER_TIMEOUT_SECONDS: float = float(_env("AMAP_WEATHER_TIMEOUT_SECONDS", "8.0"))
+AMAP_REST_BASE_URL: str = _env(
+    "AMAP_REST_BASE_URL", "https://restapi.amap.com/v3/weather/weatherInfo"
 )
 
 # ---- 检索 ----

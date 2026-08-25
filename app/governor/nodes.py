@@ -214,6 +214,12 @@ async def rewrite_extract_node(state: AgentState) -> AgentState:
     if slots.intent == "scene_search":
         slots = _apply_scene_search(slots)
 
+    # 旅行天气只服务明确目的地的旅行场景，绝不从历史请求借用目的地。
+    if not (slots.intent == "scene_search" and slots.scene == "travel"):
+        slots.travel_destination = None
+        slots.travel_start_date = None
+        slots.travel_end_date = None
+
     # 澄清确定性计算（规则覆盖 LLM 的过度谨慎/自信）
     slots = _resolve_clarification(slots)
 
@@ -406,6 +412,9 @@ def _slots_from_llm(llm: dict, query: str, pre: dict, snapshot: dict) -> SlotSch
             modifier=budget_raw.get("modifier"),
         ),
         scene=llm.get("scene"),
+        travel_destination=_safe_travel_text(llm.get("travel_destination")),
+        travel_start_date=_safe_travel_date(llm.get("travel_start_date")),
+        travel_end_date=_safe_travel_date(llm.get("travel_end_date")),
         brand=_normalize_brand(llm.get("brand")),
         exclusions=llm.get("exclusions") or [],
         spec_keywords=llm.get("spec_keywords") or [],
@@ -459,6 +468,18 @@ def _valid_category(val) -> str | None:
     if s.lower() in ("null", "none", ""):
         return None
     return s if s in _VALID_CATEGORIES else None
+
+
+def _safe_travel_text(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text[:40] if text and text.lower() not in {"null", "none"} else None
+
+
+def _safe_travel_date(value) -> str | None:
+    text = _safe_travel_text(value)
+    return text if text and re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else None
 
 
 def _normalize_brand(brand) -> str | None:

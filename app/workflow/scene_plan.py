@@ -5,6 +5,9 @@ from app.schemas.agent_state import AgentState
 
 
 async def scene_plan_node(state: AgentState) -> AgentState:
+    # TravelWeatherAgent 已构建动态任务时，保留其天气依据与真实品类计划。
+    if state.travel_plan and state.scene_task_queries:
+        return state
     plan = get_scene_plan(state.slots.scene)
     if plan is None:
         state.trace_steps.append({

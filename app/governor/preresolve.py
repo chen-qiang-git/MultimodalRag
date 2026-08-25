@@ -12,6 +12,10 @@ from app.governor.budget_governor import detect_budget_range
 
 # ---- 指代模式 ----
 _ORDINAL_PATTERN = re.compile(r"第\s*([一二三四五六七八九十12345１２３４５])\s*[个款种件]")
+_REVERSE_ORDINAL_PATTERN = re.compile(
+    r"倒数\s*(?:第\s*)?([一二三四五六七八九十12345１２３４５])\s*(?:个|款|种|件)?"
+)
+_LAST_ITEM_PATTERN = re.compile(r"最后\s*(?:一\s*)?(?:个|款|种|件)")
 _CN_NUM = {
     "一": 0, "二": 1, "三": 2, "四": 3, "五": 4,
     "六": 5, "七": 6, "八": 7, "九": 8, "十": 9,
@@ -144,11 +148,9 @@ def pre_resolve(query: str, snapshot: dict, fresh: bool = False) -> dict:
 
     # P0-C: "不要耐克" 是排除，不是引用 → 命中排除则不做引用消解
     if not fresh and not pre["exclude_hint"]:
-        m = _ORDINAL_PATTERN.search(query)
-        if m and last_product_list:
-            idx = _CN_NUM.get(m.group(1))
-            if idx is not None and idx < len(last_product_list):
-                pre["resolved_product_id"] = last_product_list[idx].get("product_id")
+        indices = resolve_product_indices(query, len(last_product_list))
+        if indices:
+            pre["resolved_product_id"] = last_product_list[indices[0]].get("product_id")
 
         if not pre["resolved_product_id"] and _LAST_REF_PATTERN.search(query) and last_product_list:
             pre["resolved_product_id"] = last_product_list[0].get("product_id")
@@ -180,6 +182,38 @@ def pre_resolve(query: str, snapshot: dict, fresh: bool = False) -> dict:
         pre["route_hint"] = "shop_action"
 
     return pre
+
+
+def resolve_product_indices(query: str, product_count: int) -> list[int]:
+    """解析推荐列表引用，支持多个“第 N 款”、最后一款和倒数第 N 款。
+
+    返回按用户表达顺序去重后的零基索引；越界引用直接忽略，绝不回退为第一款。
+    """
+    if product_count <= 0:
+        return []
+    matches: list[tuple[int, int]] = []
+    reverse_spans: list[tuple[int, int]] = []
+    for match in _REVERSE_ORDINAL_PATTERN.finditer(query or ""):
+        number = _CN_NUM.get(match.group(1))
+        if number is not None:
+            matches.append((match.start(), product_count - number - 1))
+            reverse_spans.append(match.span())
+    for match in _ORDINAL_PATTERN.finditer(query or ""):
+        if any(start <= match.start() < end for start, end in reverse_spans):
+            continue
+        index = _CN_NUM.get(match.group(1))
+        if index is not None:
+            matches.append((match.start(), index))
+    for match in _LAST_ITEM_PATTERN.finditer(query or ""):
+        matches.append((match.start(), product_count - 1))
+
+    seen: set[int] = set()
+    indices: list[int] = []
+    for _, index in sorted(matches, key=lambda item: item[0]):
+        if 0 <= index < product_count and index not in seen:
+            seen.add(index)
+            indices.append(index)
+    return indices
 
 
 def is_affirmative(query: str) -> bool:

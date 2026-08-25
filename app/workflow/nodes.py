@@ -10,6 +10,10 @@ from app.decision.scoring import DecisionScoring
 from app.model_gateway.gateway import get_model_gateway
 from app.prompts.response_prompt import CHITCHAT_PROMPT, build_response_prompt
 from app.prompts.scene_response_prompt import build_scene_response_prompt, scene_template_answer
+from app.prompts.travel_weather_response_prompt import (
+    build_travel_weather_response_prompt,
+    travel_weather_template_answer,
+)
 from app.repositories import get_product_repo
 from app.rerank.blender import blend_rank_score
 from app.retrieval.llm_evaluator import LlmEvaluator
@@ -166,7 +170,7 @@ async def _retrieve_scene_tasks(state: AgentState) -> list[dict]:
     seen_ids: set[str] = set()
     exclusions = slots.exclusions or []
 
-    for task in state.scene_task_queries[:3]:
+    for task in state.scene_task_queries[:5]:
         allowed_sub_categories = set(task.get("sub_categories") or [])
         task_hits: list[dict] = []
         for sub_category in allowed_sub_categories:
@@ -192,9 +196,23 @@ async def _retrieve_scene_tasks(state: AgentState) -> list[dict]:
                 "key": task.get("key") or "",
                 "label": task.get("label") or "实用装备",
             }
+            if task.get("weather_reason"):
+                item["travel_task"] = {
+                    "sub_category": task.get("sub_category") or task.get("label") or "旅行准备",
+                    "weather_reason": task["weather_reason"],
+                }
             selected.append(item)
             seen_ids.add(product_id)
             break
+        state.trace_steps.append({
+            "step_id": f"T{len(state.trace_steps) + 1:03d}",
+            "agent_name": "Travel Task Retrieval" if task.get("weather_reason") else "Scene Task Retrieval",
+            "action": "recall_task",
+            "input_summary": str(task.get("label") or task.get("sub_category") or "task")[:60],
+            "output_summary": f"candidates={len(task_hits)}",
+            "latency_ms": 0,
+            "status": "success" if task_hits else "empty",
+        })
     return selected
 
 
@@ -540,7 +558,8 @@ async def decision_node(state: AgentState) -> AgentState:
         results.append(decision.model_dump())
 
     results.sort(key=lambda r: r["final_score"], reverse=True)
-    state.decision_results = results[:3]  # D5: 固定推荐 Top-3
+    # 普通推荐仍为 Top-3；旅行天气清单要覆盖更多准备任务，因此放宽到 Top-5。
+    state.decision_results = results[:_recommendation_limit(state)]
     state.decision_score = results[0]["final_score"] if results else 0.0
 
     # 7维定序：把 ranked_items 同步为 final_score 顺序（回复/展示与评分完全一致）
@@ -585,10 +604,13 @@ async def response_node(state: AgentState) -> AgentState:
         state.final_response = direct_answer
         return state
 
-    top = state.ranked_items[:3]
+    top = state.ranked_items[:_recommendation_limit(state)]
+    is_travel_weather = _is_travel_weather(state)
     is_scene_plan = state.intent == "scene_search" and bool(state.scene_plan)
     prompt = (
-        build_scene_response_prompt(state.scene_plan, top)
+        build_travel_weather_response_prompt(state.travel_weather, state.travel_plan, top)
+        if is_travel_weather
+        else build_scene_response_prompt(state.scene_plan, top)
         if is_scene_plan
         else build_response_prompt(top, state.slots.spec_keywords)
     )
@@ -596,10 +618,10 @@ async def response_node(state: AgentState) -> AgentState:
     try:
         answer = await asyncio.wait_for(_gateway.chat("chat_generation", prompt), timeout=6.0)
         answer = (answer or "").strip()
-        if len(answer) < 10 or not _response_cites_candidates(answer, top, is_scene_plan):
-            answer = scene_template_answer(state.scene_plan, top) if is_scene_plan else _template_answer(top)
+        if len(answer) < 10 or not _response_cites_candidates(answer, top, is_scene_plan, is_travel_weather):
+            answer = _response_fallback(state, top, is_travel_weather, is_scene_plan)
     except Exception:
-        answer = scene_template_answer(state.scene_plan, top) if is_scene_plan else _template_answer(top)
+        answer = _response_fallback(state, top, is_travel_weather, is_scene_plan)
 
     state.final_response = answer
     # 库存不足提示：结果 <3 时如实说明，并给同类子类下的其他品牌名（不给商品信息）
@@ -646,10 +668,13 @@ async def stream_response(state: AgentState):
             state.final_response = direct_answer
             yield direct_answer
             return
-        top = state.ranked_items[:3]
+        top = state.ranked_items[:_recommendation_limit(state)]
+        is_travel_weather = _is_travel_weather(state)
         is_scene_plan = state.intent == "scene_search" and bool(state.scene_plan)
         prompt = (
-            build_scene_response_prompt(state.scene_plan, top)
+            build_travel_weather_response_prompt(state.travel_weather, state.travel_plan, top)
+            if is_travel_weather
+            else build_scene_response_prompt(state.scene_plan, top)
             if is_scene_plan
             else build_response_prompt(top, state.slots.spec_keywords)
         )
@@ -661,18 +686,17 @@ async def stream_response(state: AgentState):
             yield token
     except Exception:
         state.final_response = (
-            scene_template_answer(state.scene_plan, top)
-            if top and state.intent == "scene_search" and state.scene_plan
-            else _template_answer(top)
+            _response_fallback(state, top, _is_travel_weather(state), bool(state.scene_plan))
             if top
             else _chitchat_fallback(state.user_input)
         )
         return
 
     answer = "".join(fragments).strip()
+    is_travel_weather = _is_travel_weather(state)
     is_scene_plan = state.intent == "scene_search" and bool(state.scene_plan)
-    if top and (len(answer) < 10 or not _response_cites_candidates(answer, top, is_scene_plan)):
-        answer = scene_template_answer(state.scene_plan, top) if is_scene_plan else _template_answer(top)
+    if top and (len(answer) < 10 or not _response_cites_candidates(answer, top, is_scene_plan, is_travel_weather)):
+        answer = _response_fallback(state, top, is_travel_weather, is_scene_plan)
     elif not answer:
         answer = _chitchat_fallback(state.user_input) if not top else _template_answer(top)
     if 0 < len(top) < 3:
@@ -739,15 +763,44 @@ def _cites_products(answer: str, top: list[dict]) -> bool:
     return True
 
 
-def _response_cites_candidates(answer: str, top: list[dict], is_scene_plan: bool) -> bool:
+def _response_cites_candidates(
+    answer: str, top: list[dict], is_scene_plan: bool, is_travel_weather: bool = False
+) -> bool:
     if not _cites_products(answer, top):
         return False
     if not is_scene_plan:
         return True
-    return all(
+    if not all(
         str((item.get("scene_task") or {}).get("label") or "") in answer
         for item in top
+    ):
+        return False
+    return not is_travel_weather or all(
+        str((item.get("travel_task") or {}).get("weather_reason") or "") in answer
+        for item in top
     )
+
+
+def _is_travel_weather(state: AgentState) -> bool:
+    return (
+        state.travel_weather_status == "available"
+        and bool(state.travel_weather)
+        and bool(state.travel_plan)
+    )
+
+
+def _recommendation_limit(state: AgentState) -> int:
+    return 5 if _is_travel_weather(state) else 3
+
+
+def _response_fallback(
+    state: AgentState, top: list[dict], is_travel_weather: bool, is_scene_plan: bool
+) -> str:
+    if is_travel_weather:
+        return travel_weather_template_answer(state.travel_weather, state.travel_plan, top)
+    if is_scene_plan:
+        return scene_template_answer(state.scene_plan, top)
+    return _template_answer(top)
 
 
 def _low_stock_hint(top: list[dict], current_brand: str | None) -> str:

@@ -31,6 +31,12 @@ data class RecommendResponse(
     val scenePlan: Map<String, Any?>? = null,
     @SerializedName("scene_task_queries")
     val sceneTaskQueries: List<Map<String, Any?>> = emptyList(),
+    @SerializedName("travel_weather_status")
+    val travelWeatherStatus: String = "not_requested",
+    @SerializedName("travel_weather")
+    val travelWeather: Map<String, Any?>? = null,
+    @SerializedName("travel_plan")
+    val travelPlan: Map<String, Any?>? = null,
     @SerializedName("constraints")
     val constraints: Map<String, Any?>? = null,
     @SerializedName("used_memories")

@@ -2,6 +2,7 @@
 """P1 — DialogueGovernor 编译 Prompt（改写 + 意图 + 槽位，一次 LLM 调用）。"""
 
 import json
+from datetime import date
 from app.core.config import MAX_HISTORY_TURNS
 
 
@@ -24,6 +25,9 @@ def build_governor_prompt(
 
 ### Chat History（原文直塞，最多 {MAX_HISTORY_TURNS} 轮）
 {history_text or "（无历史，这是本轮首条消息）"}
+
+### 当前日期
+{date.today().isoformat()}（解析“明天/下周/国庆”等旅行日期时以此为基准；无法确定具体日期则置 null）
 
 ### 预消解结果（规则层，高置信度，冲突时以规则为准）
 {pre_str}
@@ -55,9 +59,12 @@ def build_governor_prompt(
    反例：用户说"不要小米" → brand 必须为 null，不能填 Apple/Huawei！
    除非历史上下文中明确提到了某个品牌（如上一轮用户说了"苹果"），否则 brand 为 null。
 8. **输出格式**：仅输出纯 JSON，严禁包含 Markdown 标记（```json）或任何解释性文字。
+9. **旅行天气槽位**：仅当 `scene` 为 `travel` 且用户明确目的地时填写
+   `travel_destination`；日期统一为 YYYY-MM-DD。用户未给日期时两个日期字段为 null；
+   非旅行请求三个旅行字段一律为 null。目的地仅填城市/地区名，不填“旅游”“旅行”等活动词。
 
 ### 意图判定（Rule 6 之后执行，按顺序匹配，命中即停）
-9. 意图判定：
+10. 意图判定：
    (a) 用户消息只含条件更新（预算/排除/修饰词，无新需求名词）→ intent = "narrow", budget_carryover = "inherit"
        例："不要小米"、"换个便宜点的"、"300-500之间"
    (b) 序数/品牌/上次引用命中 → narrow
@@ -79,6 +86,9 @@ def build_governor_prompt(
   "brand": "string or null",
   "budget": {{"min": null, "max": null, "raw": "string or null", "modifier": "string or null"}},
   "scene": "string or null",
+  "travel_destination": "string or null",
+  "travel_start_date": "YYYY-MM-DD or null",
+  "travel_end_date": "YYYY-MM-DD or null",
   "exclusions": ["string"],
   "spec_keywords": ["string"],
   "must_tags": ["string"]
@@ -97,6 +107,9 @@ def build_governor_prompt(
   "brand": "Nike",
   "budget": {{"min": null, "max": null, "raw": "五百以内", "modifier": "cheaper"}},
   "scene": null,
+  "travel_destination": null,
+  "travel_start_date": null,
+  "travel_end_date": null,
   "exclusions": [],
   "spec_keywords": [],
   "must_tags": []
@@ -115,6 +128,9 @@ def build_governor_prompt(
   "brand": null,
   "budget": {{"min": null, "max": null, "raw": null, "modifier": null}},
   "scene": null,
+  "travel_destination": null,
+  "travel_start_date": null,
+  "travel_end_date": null,
   "exclusions": ["小米"],
   "spec_keywords": [],
   "must_tags": []
@@ -133,6 +149,9 @@ def build_governor_prompt(
   "brand": null,
   "budget": {{"min": null, "max": null, "raw": "500-1000之间", "modifier": "pricier"}},
   "scene": null,
+  "travel_destination": null,
+  "travel_start_date": null,
+  "travel_end_date": null,
   "exclusions": [],
   "spec_keywords": [],
   "must_tags": []
@@ -152,6 +171,9 @@ def build_governor_prompt(
   "brand": "Adidas",
   "budget": {{"min": null, "max": null, "raw": "500-1200", "modifier": null}},
   "scene": null,
+  "travel_destination": null,
+  "travel_start_date": null,
+  "travel_end_date": null,
   "exclusions": [],
   "spec_keywords": [],
   "must_tags": []

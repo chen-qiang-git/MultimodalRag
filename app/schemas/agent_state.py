@@ -41,6 +41,10 @@ class SlotSchema(BaseModel):
     brand: Optional[str] = None
     budget: BudgetSchema = Field(default_factory=BudgetSchema)
     scene: Optional[str] = None
+    # 旅行天气导购槽位：由 Governor 解析，非旅行请求会在规则层清空。
+    travel_destination: Optional[str] = None
+    travel_start_date: Optional[str] = None  # ISO YYYY-MM-DD
+    travel_end_date: Optional[str] = None    # ISO YYYY-MM-DD
     skin_type: Optional[str] = None
     benefit: List[str] = Field(default_factory=list)
     exclusions: List[str] = Field(default_factory=list)
@@ -116,6 +120,11 @@ class AgentState(BaseModel):
     # 场景导购：由独立 Scene Plan Node 写入，供任务检索、回答和追踪复用。
     scene_plan: Dict[str, Any] = Field(default_factory=dict)
     scene_task_queries: List[Dict[str, Any]] = Field(default_factory=list)
+    travel_weather_status: Literal[
+        "not_requested", "available", "unavailable", "out_of_range"
+    ] = "not_requested"
+    travel_weather: Dict[str, Any] = Field(default_factory=dict)
+    travel_plan: Dict[str, Any] = Field(default_factory=dict)
 
     # ---- 追问（短路）----
     needs_clarification: bool = False
